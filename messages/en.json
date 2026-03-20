@@ -1,6 +1,8 @@
 {
   "app": {
-    "title": "My App",
-    "description": "Welcome to My App"
+    "title": "Gondoor Template",
+    "description": "A modern Next.js starter with shadcn/ui, Drizzle, Better Auth, and more.",
+    "cta": "Get Started",
+    "stack": "Built with"
   }
 }
