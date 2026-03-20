@@ -2,26 +2,41 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Template Stack
+
+- **Next.js 16** (App Router) — React 19, TypeScript 5 strict
+- **Drizzle ORM + Neon** — Postgres via `@neondatabase/serverless`
+- **Tailwind CSS v4** — PostCSS, CSS variable theming
+- **shadcn/ui** — all components pre-installed + zod + react-hook-form + sonner
+- **next-intl** — i18n with `[locale]` routing
+- **Jest** — unit/component testing
+- **Better Auth** — email/password auth with Drizzle adapter
+- **Zustand** — global client state
+
 ## Commands
 
 ```bash
 pnpm dev          # Start development server (localhost:3000)
-pnpm build        # Production build
+pnpm build        # Build for production
 pnpm start        # Start production server
 pnpm lint         # Run ESLint
-pnpm test         # Run Jest tests
+pnpm typecheck    # Run tsc --noEmit
+pnpm test         # Run Jest
 pnpm test:watch   # Run Jest in watch mode
+pnpm check        # lint + typecheck + test + build (run before committing)
 
 # Database
-pnpm drizzle-kit push       # Push schema changes to Neon (no migration file)
+pnpm drizzle-kit push       # Push schema to Neon (no migration file)
 pnpm drizzle-kit generate   # Generate SQL migration files
-pnpm drizzle-kit studio     # Open Drizzle Studio (DB browser)
+pnpm drizzle-kit studio     # Open Drizzle Studio
 
 # shadcn/ui
 pnpm dlx shadcn@latest add <component>
 ```
 
-> **Package manager**: This project uses `pnpm`, not `npm` or `yarn`.
+> **Package manager**: This project uses `pnpm`. Never use `npm` or `yarn`.
+
+> **Before every code change**: run `pnpm check` to ensure lint, types, tests, and build all pass.
 
 ## Environment Variables
 
@@ -35,7 +50,7 @@ BETTER_AUTH_SECRET=        # openssl rand -base64 32
 
 ## Architecture
 
-**Gondoor Template** is a **Next.js 16 App Router** project using **React 19** and **TypeScript 5** in strict mode, organized with a **feature-based architecture**.
+**Gondoor Template** is organized with a **feature-based architecture**. Routes are thin — all business logic lives in `features/`.
 
 ### Directory Structure
 
@@ -43,7 +58,7 @@ BETTER_AUTH_SECRET=        # openssl rand -base64 32
 app/
   layout.tsx                # Root layout — ThemeProvider, TooltipProvider, Toaster, fonts
   globals.css               # Global styles + Tailwind CSS v4 theme variables
-  [locale]/                 # All user-facing routes live here (next-intl)
+  [locale]/                 # All user-facing routes (next-intl)
     layout.tsx              # NextIntlClientProvider wrapper
     page.tsx                # Landing page
   api/
@@ -59,7 +74,7 @@ features/                   # Feature modules (primary business logic)
 
 components/
   ui/                       # shadcn/ui primitives — do not edit directly
-                            # Installed: accordion, alert, alert-dialog, aspect-ratio,
+                            # Pre-installed: accordion, alert, alert-dialog, aspect-ratio,
                             # avatar, badge, breadcrumb, button, calendar, card, carousel,
                             # chart, checkbox, collapsible, combobox, command, context-menu,
                             # dialog, direction, drawer, dropdown-menu, empty, field,
@@ -68,18 +83,20 @@ components/
                             # progress, radio-group, resizable, scroll-area, select,
                             # separator, sheet, sidebar, skeleton, slider, sonner, spinner,
                             # switch, table, tabs, textarea, toggle, toggle-group, tooltip
+
 hooks/
-  use-mobile.ts             # Detects mobile viewport (installed by sidebar component)
+  use-mobile.ts             # Mobile viewport detection
 
 lib/
   auth.ts                   # Better Auth server config (betterAuth())
   auth-client.ts            # Better Auth client (signIn, signUp, signOut, useSession)
   db/
     index.ts                # Drizzle + Neon client
-    schema.ts               # All table definitions (including Better Auth tables)
+    schema.ts               # All table definitions (includes Better Auth tables)
     migrations/             # Generated SQL migrations
   stores/
     app-store.ts            # Global Zustand store
+  utils.ts                  # cn() class utility
 
 i18n/
   routing.ts                # Locale list and default locale
@@ -88,8 +105,15 @@ i18n/
 messages/
   en.json                   # English strings
 
+tests/                      # All test files — mirrors source structure by feature
+  lib/
+    utils.test.ts
+  features/
+    [feature-name]/         # Add a folder per feature matching features/
+
 middleware.ts               # next-intl locale routing middleware
 drizzle.config.ts           # Drizzle Kit config
+jest.config.ts              # Jest config (testMatch: tests/**/*.test.{ts,tsx})
 ```
 
 ### Feature-Based Rules
@@ -97,7 +121,7 @@ drizzle.config.ts           # Drizzle Kit config
 - **Encapsulate by feature**: All code related to a feature lives inside `features/[feature-name]/`. Routes in `app/[locale]/` are thin — they import and compose from `features/`.
 - **Public API via index.ts**: Cross-feature imports must go through `features/[feature-name]/index.ts`. Never import directly from internal feature files in another feature.
 - **Shared code in `components/` or `lib/`**: Only extract to shared directories when used by 2+ features.
-- **`components/ui/`** holds shadcn/ui primitives — do not edit these directly. All components are pre-installed; add new ones with `pnpm dlx shadcn@latest add <component>`.
+- **`components/ui/`** holds shadcn/ui primitives — do not edit these directly.
 
 ### Path Aliases
 
@@ -118,34 +142,39 @@ drizzle.config.ts           # Drizzle Kit config
 
 ### Database (Drizzle + Neon)
 
-- Client: `neon()` from `@neondatabase/serverless` → passed to `drizzle()` in `lib/db/index.ts`
-- Schema: `lib/db/schema.ts` — already includes all four Better Auth tables (`user`, `session`, `account`, `verification`)
+- Client: `neon()` from `@neondatabase/serverless` → `drizzle()` in `lib/db/index.ts`
+- Schema: `lib/db/schema.ts` — includes all four Better Auth tables (`user`, `session`, `account`, `verification`)
 - Add new tables to `lib/db/schema.ts` and run `pnpm drizzle-kit push`
 
 ### Auth (Better Auth)
 
 - Server: `lib/auth.ts` — add plugins and providers here
 - Client: `lib/auth-client.ts` — use `signIn`, `signUp`, `signOut`, `useSession` in client components
-- API: `app/api/auth/[...all]/route.ts` — do not modify; proxies all auth requests
-- Schema is already defined in `lib/db/schema.ts` — no need to run `better-auth generate`
+- API: `app/api/auth/[...all]/route.ts` — do not modify
+- Schema already defined in `lib/db/schema.ts` — no need to run `better-auth generate`
 
 ### i18n (next-intl)
 
 - Add locales to `i18n/routing.ts` and create a matching `messages/[locale].json`
 - Server components: `const t = await getTranslations("namespace")`
 - Client components: `const t = useTranslations("namespace")`
-- Navigation (Link, redirect, useRouter): import from `@/i18n/routing` not `next/navigation`
+- Navigation (`Link`, `redirect`, `useRouter`): import from `@/i18n/routing`, not `next/navigation`
 
 ### shadcn/ui Notes
 
-- `TooltipProvider` is already in the root layout — `<Tooltip>` works anywhere without an additional provider.
-- `toast` component is deprecated — use `sonner` (`import { toast } from "sonner"`).
-- `data-table`, `date-picker`, and `typography` are patterns documented on shadcn/ui but not CLI-installable — build them from `table` + `calendar` + `popover` primitives.
+- `TooltipProvider` is already in root layout — `<Tooltip>` works anywhere without an extra provider.
+- `toast` is deprecated — use `sonner` (`import { toast } from "sonner"`).
+- `data-table`, `date-picker`, `typography` are patterns (not CLI-installable) — compose from `table` + `calendar` + `popover` primitives.
 
-### Styling
+### Git Hooks (Husky)
 
-Tailwind CSS v4 via PostCSS. Theme variables (colors, radius) defined in `app/globals.css`. Dark mode via `next-themes` (`ThemeProvider` in root layout, `attribute="class"`).
+- **pre-commit** — runs `lint-staged`: ESLint `--fix` on staged `*.{ts,tsx,js,mjs,cjs}` files
+- **pre-push** — runs `pnpm check` (lint + typecheck + test + build)
+- Hooks live in `.husky/`. Auto-enabled via `prepare` script on `pnpm install`.
 
 ### Testing
 
-Jest 30 with `jest-environment-jsdom`, `@testing-library/react`, `@testing-library/jest-dom`. Config in `jest.config.ts`, setup in `jest.setup.ts`. Uses `next/jest` transformer.
+Jest 30 + `jest-environment-jsdom` + `@testing-library/react` + `@testing-library/jest-dom`. Config in `jest.config.ts`, setup in `jest.setup.ts`. All test files live under `tests/`, mirroring the feature structure:
+
+- `tests/lib/` — shared utility tests
+- `tests/features/[feature-name]/` — one folder per feature
