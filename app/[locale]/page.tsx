@@ -7,13 +7,75 @@ const templates: Record<string, React.ComponentType<{ config?: SiteConfig }>> = 
   saas: dynamic<{ config?: SiteConfig }>(() => import("@/templates/saas")),
 };
 
+/** Mix two hex colors: weight 0 = pure base, weight 1 = pure mix. */
+function mixHex(mixColor: string, baseColor: string, weight: number): string {
+  const parse = (hex: string) => {
+    const h = hex.replace("#", "");
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  };
+  const [mr, mg, mb] = parse(mixColor);
+  const [br, bg, bb] = parse(baseColor);
+  const ch = (m: number, b: number) =>
+    Math.round(m * weight + b * (1 - weight))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${ch(mr, br)}${ch(mg, bg)}${ch(mb, bb)}`;
+}
+
+function buildGoogleFontsUrl(theme: SiteConfig["theme"]): string {
+  const fonts = new Set([theme.fontDisplay, theme.fontBody].filter(Boolean));
+  const families = Array.from(fonts)
+    .map((f) => `family=${f.replace(/ /g, "+")}:wght@400;500;600;700;900`)
+    .join("&");
+  return `https://fonts.googleapis.com/css2?${families}&display=swap`;
+}
+
+function buildThemeCSS(theme: SiteConfig["theme"]): string {
+  const { colorPrimary, colorAccent, colorBg, colorText, fontDisplay, fontBody } = theme;
+  const muted = mixHex(colorText, colorBg, 0.06);
+  const mutedFg = mixHex(colorText, colorBg, 0.55);
+  const border = mixHex(colorText, colorBg, 0.12);
+
+  return `:root {
+    --background: ${colorBg};
+    --foreground: ${colorText};
+    --card: ${colorBg};
+    --card-foreground: ${colorText};
+    --popover: ${colorBg};
+    --popover-foreground: ${colorText};
+    --primary: ${colorPrimary};
+    --primary-foreground: ${colorBg};
+    --secondary: ${muted};
+    --secondary-foreground: ${colorText};
+    --muted: ${muted};
+    --muted-foreground: ${mutedFg};
+    --accent: ${colorAccent};
+    --accent-foreground: ${colorBg};
+    --border: ${border};
+    --input: ${border};
+    --ring: ${colorPrimary};
+    --font-sans: '${fontBody}', 'Inter', sans-serif;
+    --font-heading: '${fontDisplay}', 'Inter', sans-serif;
+  }
+  body { font-family: '${fontBody}', 'Inter', sans-serif; }
+  h1, h2, h3, h4, h5, h6 { font-family: '${fontDisplay}', 'Inter', sans-serif; }`;
+}
+
 export default async function HomePage() {
   const config = await getSiteConfig();
 
   if (config) {
     const Template = templates[config.templateSlug];
     if (Template) {
-      return <Template config={config} />;
+      return (
+        <>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+          <link rel="stylesheet" href={buildGoogleFontsUrl(config.theme)} />
+          <style dangerouslySetInnerHTML={{ __html: buildThemeCSS(config.theme) }} />
+          <Template config={config} />
+        </>
+      );
     }
   }
 
