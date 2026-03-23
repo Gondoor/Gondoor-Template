@@ -1,17 +1,17 @@
 import { getSiteConfig } from "@/lib/site-config";
 import type { SiteConfig } from "@/lib/site-config.types";
 import { getTranslations } from "next-intl/server";
-import SaasTemplate from "@/templates/saas";
+import dynamic from "next/dynamic";
 
-const TEMPLATES: Record<string, React.ComponentType<{ config?: SiteConfig }>> = {
-  saas: SaasTemplate,
+const templates: Record<string, React.ComponentType<{ config?: SiteConfig }>> = {
+  saas: dynamic<{ config?: SiteConfig }>(() => import("@/templates/saas")),
 };
 
 export default async function HomePage() {
   const config = await getSiteConfig();
 
   if (config) {
-    const Template = TEMPLATES[config.templateSlug];
+    const Template = templates[config.templateSlug];
     if (Template) {
       return <Template config={config} />;
     }
