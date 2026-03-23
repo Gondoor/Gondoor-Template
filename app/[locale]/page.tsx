@@ -1,11 +1,30 @@
+import { getSiteConfig } from "@/lib/site-config";
+import type { SiteConfig } from "@/lib/site-config.types";
 import { getTranslations } from "next-intl/server";
+import SaasTemplate from "@/templates/saas";
+
+const TEMPLATES: Record<string, React.ComponentType<{ config?: SiteConfig }>> = {
+  saas: SaasTemplate,
+};
 
 export default async function HomePage() {
+  const config = await getSiteConfig();
+
+  if (config) {
+    const Template = TEMPLATES[config.templateSlug];
+    if (Template) {
+      return <Template config={config} />;
+    }
+  }
+
+  return <StarterPage />;
+}
+
+async function StarterPage() {
   const t = await getTranslations("app");
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-12 px-6 py-24">
-      {/* Hero */}
       <div className="flex flex-col items-center gap-4 text-center">
         <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
           Starter Template

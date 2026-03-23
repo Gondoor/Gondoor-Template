@@ -50,3 +50,11 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });
+
+// Landing page configuration (inserted by Gondoor provisioning)
+export const siteConfig = pgTable("site_config", {
+  id: text("id").primaryKey().default("default"),
+  config: text("config").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
