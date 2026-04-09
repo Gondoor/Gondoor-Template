@@ -7,13 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This template deploys to Cloudflare Pages via `@cloudflare/next-on-pages`, which **rejects any non-static route that does not export `runtime = 'edge'`**. Whenever you add a new `page.tsx`, `layout.tsx`, `route.ts`, `not-found.tsx`, or the root `middleware.ts`, you MUST add at the top (after imports):
 
 ```ts
-export const runtime = "edge";
+export const runtime = "edge"
 ```
 
 This applies to every file under `app/` that renders dynamically (the `ƒ` symbol in `next build` output) and to `middleware.ts`. Skip only if the route is fully static (`export const dynamic = 'force-static'`). Omitting this will break Cloudflare Pages builds with: `The following routes were not configured to run with the Edge Runtime`.
 
 **Important — do NOT use `proxy.ts`:** Next.js 16 introduced `proxy.ts` as the new convention to replace `middleware.ts`, but `proxy.ts` is forced to Node.js runtime and forbids `export const runtime = 'edge'`. This is incompatible with `@cloudflare/next-on-pages`. We deliberately use the deprecated `middleware.ts` filename to keep edge runtime support. The deprecation warning during build is expected — ignore it. If a future Next.js version removes `middleware.ts`, the template must migrate to `@opennextjs/cloudflare`.
-
 
 ## Diagnostic Error Boundaries: DO NOT REMOVE
 
@@ -36,7 +35,6 @@ service).
 
 Both files MUST export `runtime = 'edge'` like every other non-static route
 in this template (see Cloudflare Pages: Edge Runtime Required section above).
-
 
 ## Template Stack
 
@@ -165,16 +163,16 @@ jest.config.ts              # Jest config (testMatch: tests/**/*.test.{ts,tsx})
 
 ### Key Libraries
 
-| Library | Usage |
-|---|---|
-| `zod` | Schema validation — pair with `zodResolver` from `@hookform/resolvers/zod` |
-| `react-hook-form` | Form state — `useForm<z.infer<typeof schema>>()` |
-| `motion` | Animations — `import { motion } from "motion/react"` |
-| `sonner` | Toasts — `import { toast } from "sonner"` |
-| `zustand` | Global client state — stores in `lib/stores/` or `features/[x]/store.ts` |
-| `better-auth` | Auth — server: `lib/auth.ts`, client: `lib/auth-client.ts` |
-| `drizzle-orm` | ORM — schema in `lib/db/schema.ts`, client in `lib/db/index.ts` |
-| `next-intl` | i18n — strings in `messages/[locale].json`, used via `getTranslations` (server) or `useTranslations` (client) |
+| Library           | Usage                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `zod`             | Schema validation — pair with `zodResolver` from `@hookform/resolvers/zod`                                    |
+| `react-hook-form` | Form state — `useForm<z.infer<typeof schema>>()`                                                              |
+| `motion`          | Animations — `import { motion } from "motion/react"`                                                          |
+| `sonner`          | Toasts — `import { toast } from "sonner"`                                                                     |
+| `zustand`         | Global client state — stores in `lib/stores/` or `features/[x]/store.ts`                                      |
+| `better-auth`     | Auth — server: `lib/auth.ts`, client: `lib/auth-client.ts`                                                    |
+| `drizzle-orm`     | ORM — schema in `lib/db/schema.ts`, client in `lib/db/index.ts`                                               |
+| `next-intl`       | i18n — strings in `messages/[locale].json`, used via `getTranslations` (server) or `useTranslations` (client) |
 
 ### Database (Drizzle + Neon)
 
