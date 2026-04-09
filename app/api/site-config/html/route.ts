@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { siteConfig } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+export const runtime = "edge";
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const secret = req.headers.get("x-gondoor-secret");
   if (secret !== process.env.GONDOOR_INTERNAL_SECRET) {
