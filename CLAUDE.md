@@ -14,6 +14,30 @@ This applies to every file under `app/` that renders dynamically (the `ƒ` symbo
 
 **Important — do NOT use `proxy.ts`:** Next.js 16 introduced `proxy.ts` as the new convention to replace `middleware.ts`, but `proxy.ts` is forced to Node.js runtime and forbids `export const runtime = 'edge'`. This is incompatible with `@cloudflare/next-on-pages`. We deliberately use the deprecated `middleware.ts` filename to keep edge runtime support. The deprecation warning during build is expected — ignore it. If a future Next.js version removes `middleware.ts`, the template must migrate to `@opennextjs/cloudflare`.
 
+
+## Diagnostic Error Boundaries: DO NOT REMOVE
+
+`app/error.tsx` and `app/global-error.tsx` are diagnostic boundaries that the
+Gondor backend depends on to surface runtime errors from the deployed Cloudflare
+Pages worker. Without them, the deployed site falls through to Next.js's
+generic `__next_error__` template which has no useful info in the response
+body, making remote debugging nearly impossible.
+
+These files render the actual error message and stack trace as part of the
+page HTML. The Gondor backend captures this body during post-deploy
+verification and stores it in `engineering_tasks.error_payload` so operators
+can read the exception in the dashboard task detail modal.
+
+If you remove these files, every future Build MVP runtime crash becomes a
+black box. The maintenance cost of keeping them is zero — they're pure
+display components with no dependencies. Leave them alone unless you're
+adding richer diagnostic features (e.g. Sentry integration, error reporting
+service).
+
+Both files MUST export `runtime = 'edge'` like every other non-static route
+in this template (see Cloudflare Pages: Edge Runtime Required section above).
+
+
 ## Template Stack
 
 - **Next.js 16** (App Router) — React 19, TypeScript 5 strict
