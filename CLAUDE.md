@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Cloudflare Pages: Edge Runtime Required
+
+This template deploys to Cloudflare Pages via `@cloudflare/next-on-pages`, which **rejects any non-static route that does not export `runtime = 'edge'`**. Whenever you add a new `page.tsx`, `layout.tsx`, `route.ts`, `not-found.tsx`, or the root `middleware.ts`, you MUST add at the top (after imports):
+
+```ts
+export const runtime = "edge";
+```
+
+This applies to every file under `app/` that renders dynamically (the `ƒ` symbol in `next build` output) and to `middleware.ts`. Skip only if the route is fully static (`export const dynamic = 'force-static'`). Omitting this will break Cloudflare Pages builds with: `The following routes were not configured to run with the Edge Runtime`.
+
+**Important — do NOT use `proxy.ts`:** Next.js 16 introduced `proxy.ts` as the new convention to replace `middleware.ts`, but `proxy.ts` is forced to Node.js runtime and forbids `export const runtime = 'edge'`. This is incompatible with `@cloudflare/next-on-pages`. We deliberately use the deprecated `middleware.ts` filename to keep edge runtime support. The deprecation warning during build is expected — ignore it. If a future Next.js version removes `middleware.ts`, the template must migrate to `@opennextjs/cloudflare`.
+
 ## Template Stack
 
 - **Next.js 16** (App Router) — React 19, TypeScript 5 strict
