@@ -14,10 +14,6 @@ This applies to every file under `app/` that renders dynamically (the `ƒ` symbo
 
 **Important — do NOT use `proxy.ts`:** Next.js 16 introduced `proxy.ts` as the new convention to replace `middleware.ts`, but `proxy.ts` is forced to Node.js runtime and forbids `export const runtime = 'edge'`. This is incompatible with `@cloudflare/next-on-pages`. We deliberately use the deprecated `middleware.ts` filename to keep edge runtime support. The deprecation warning during build is expected — ignore it. If a future Next.js version removes `middleware.ts`, the template must migrate to `@opennextjs/cloudflare`.
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 4da6b104f7a8c629b95ad54be21f98fcefaf0606
 ## Diagnostic Error Boundaries: DO NOT REMOVE
 
 `app/error.tsx` and `app/global-error.tsx` are diagnostic boundaries that the
@@ -40,10 +36,6 @@ service).
 Both files MUST export `runtime = 'edge'` like every other non-static route
 in this template (see Cloudflare Pages: Edge Runtime Required section above).
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 4da6b104f7a8c629b95ad54be21f98fcefaf0606
 ## Template Stack
 
 - **Next.js 16** (App Router) — React 19, TypeScript 5 strict
