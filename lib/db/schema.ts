@@ -55,6 +55,7 @@ export const verification = pgTable("verification", {
 export const siteConfig = pgTable("site_config", {
   id: text("id").primaryKey().default("default"),
   config: text("config").notNull(),
+  generatedHtml: text("generated_html"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
