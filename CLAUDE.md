@@ -111,7 +111,7 @@ tests/                      # All test files — mirrors source structure by fea
   features/
     [feature-name]/         # Add a folder per feature matching features/
 
-middleware.ts               # next-intl locale routing middleware
+proxy.ts                    # next-intl locale routing (renamed from middleware.ts — Next.js 16 uses "proxy" convention)
 drizzle.config.ts           # Drizzle Kit config
 jest.config.ts              # Jest config (testMatch: tests/**/*.test.{ts,tsx})
 ```
