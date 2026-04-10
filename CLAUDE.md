@@ -2,17 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Cloudflare Pages: Edge Runtime Required
+## Cloudflare Pages: OpenNext Deployment
 
-This template deploys to Cloudflare Pages via `@cloudflare/next-on-pages`, which **rejects any non-static route that does not export `runtime = 'edge'`**. Whenever you add a new `page.tsx`, `layout.tsx`, `route.ts`, `not-found.tsx`, or the root `middleware.ts`, you MUST add at the top (after imports):
+This template deploys to Cloudflare Pages via `@opennextjs/cloudflare`. Unlike the older `@cloudflare/next-on-pages` adapter, OpenNext does **not** require `export const runtime = 'edge'` on routes — route handlers and pages run as server functions automatically.
 
-```ts
-export const runtime = "edge"
-```
-
-This applies to every file under `app/` that renders dynamically (the `ƒ` symbol in `next build` output) and to `middleware.ts`. Skip only if the route is fully static (`export const dynamic = 'force-static'`). Omitting this will break Cloudflare Pages builds with: `The following routes were not configured to run with the Edge Runtime`.
-
-**Important — do NOT use `proxy.ts`:** Next.js 16 introduced `proxy.ts` as the new convention to replace `middleware.ts`, but `proxy.ts` is forced to Node.js runtime and forbids `export const runtime = 'edge'`. This is incompatible with `@cloudflare/next-on-pages`. We deliberately use the deprecated `middleware.ts` filename to keep edge runtime support. The deprecation warning during build is expected — ignore it. If a future Next.js version removes `middleware.ts`, the template must migrate to `@opennextjs/cloudflare`.
+**Do NOT add `export const runtime = 'edge'` to files in `app/`.** OpenNext handles the runtime configuration. The only file that needs a runtime export is `middleware.ts`, which uses `export const runtime = "experimental-edge"`.
 
 ## Diagnostic Error Boundaries: DO NOT REMOVE
 
@@ -33,12 +27,12 @@ display components with no dependencies. Leave them alone unless you're
 adding richer diagnostic features (e.g. Sentry integration, error reporting
 service).
 
-Both files MUST export `runtime = 'edge'` like every other non-static route
-in this template (see Cloudflare Pages: Edge Runtime Required section above).
+Do NOT add `export const runtime = 'edge'` to these files — OpenNext handles
+the runtime configuration (see Cloudflare Pages: OpenNext Deployment section above).
 
 ## Template Stack
 
-- **Next.js 16** (App Router) — React 19, TypeScript 5 strict
+- **Next.js 15** (App Router) — React 19, TypeScript 5 strict
 - **Drizzle ORM + Neon** — Postgres via `@neondatabase/serverless`
 - **Tailwind CSS v4** — PostCSS, CSS variable theming
 - **shadcn/ui** — all components pre-installed + zod + react-hook-form + sonner
@@ -145,7 +139,7 @@ tests/                      # All test files — mirrors source structure by fea
   features/
     [feature-name]/         # Add a folder per feature matching features/
 
-proxy.ts                    # next-intl locale routing (renamed from middleware.ts — Next.js 16 uses "proxy" convention)
+middleware.ts               # next-intl locale routing (must use experimental-edge runtime for OpenNext)
 drizzle.config.ts           # Drizzle Kit config
 jest.config.ts              # Jest config (testMatch: tests/**/*.test.{ts,tsx})
 ```

@@ -1,8 +1,5 @@
 'use client';
 
-// Required for Cloudflare Pages compatibility — see CLAUDE.md "Cloudflare Pages: Edge Runtime Required"
-export const runtime = 'edge';
-
 interface GlobalErrorProps {
   error: Error & { digest?: string };
 }
