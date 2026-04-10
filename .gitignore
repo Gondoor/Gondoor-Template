@@ -45,3 +45,12 @@ next-env.d.ts
 
 .agents
 docs
+
+# wrangler
+.wrangler/
+
+
+# github except workflow
+.github/*
+!.github/workflows/
+!.github/workflows/**
