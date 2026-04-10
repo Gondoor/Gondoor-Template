@@ -33,3 +33,4 @@ jobs:
           NODE_ENV: ${{ secrets.NODE_ENV }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           BETTER_AUTH_URL: ${{ secrets.BETTER_AUTH_URL }}
+
