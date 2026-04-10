@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SiteHeader } from "@/components/layout/site-header";
+import { SiteFooter } from "@/components/layout/site-footer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,7 +37,9 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <TooltipProvider>
-            {children}
+            <SiteHeader />
+            <main>{children}</main>
+            <SiteFooter />
           </TooltipProvider>
           <Toaster />
         </ThemeProvider>
