@@ -5,7 +5,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: Main
+    environment: main
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
