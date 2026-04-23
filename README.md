@@ -29,6 +29,12 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Cloudflare Worker Target
+
+CI deploy target is set explicitly by the `WORKER_NAME` GitHub secret. The workflow deploy command always passes `--name "$WORKER_NAME"` (including `wrangler secret bulk`).
+
+In this template, `wrangler.json` uses a non-authoritative placeholder `name` value only. Do not rely on it for production tenant targeting.
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
