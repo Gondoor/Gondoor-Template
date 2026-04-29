@@ -1,6 +1,8 @@
 import { LANDING_SCHEMA_SOURCE } from "@/lib/landing/seed/landing-schema.generated"
 import { parseLandingSchema } from "@/lib/landing/schema"
 
+const landingSchemaSourceObject = LANDING_SCHEMA_SOURCE as Record<string, unknown>
+
 describe("landing schema contract v1", () => {
   it("parses the generated landing schema source", () => {
     const schema = parseLandingSchema(LANDING_SCHEMA_SOURCE)
@@ -14,7 +16,7 @@ describe("landing schema contract v1", () => {
   it("rejects unknown section types", () => {
     expect(() =>
       parseLandingSchema({
-        ...LANDING_SCHEMA_SOURCE,
+        ...landingSchemaSourceObject,
         sections: [{ type: "unknown-section" }],
       }),
     ).toThrow("Invalid landing schema")
@@ -23,7 +25,7 @@ describe("landing schema contract v1", () => {
   it("rejects malformed design tokens", () => {
     expect(() =>
       parseLandingSchema({
-        ...LANDING_SCHEMA_SOURCE,
+        ...landingSchemaSourceObject,
         tokens: {
           ...((LANDING_SCHEMA_SOURCE as { tokens: Record<string, unknown> }).tokens ?? {}),
           background: 42,
