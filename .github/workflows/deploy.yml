@@ -40,6 +40,11 @@ jobs:
 
           echo "Deploying worker: $WORKER_NAME"
           echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+      - name: Apply database migrations
+        if: steps.deploy_prereqs.outputs.can_deploy == 'true'
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Deploy worker
         if: steps.deploy_prereqs.outputs.can_deploy == 'true'
         run: |
