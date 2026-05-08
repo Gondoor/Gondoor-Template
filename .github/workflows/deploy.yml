@@ -33,9 +33,8 @@ jobs:
           done
 
           if [ -n "$missing" ]; then
-            echo "::warning::Skipping Cloudflare deploy; missing required secrets:$missing"
-            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::error::Missing required secrets:$missing"
+            exit 1
           fi
 
           echo "Deploying worker: $WORKER_NAME"
