@@ -42,7 +42,12 @@ jobs:
           echo "can_deploy=true" >> "$GITHUB_OUTPUT"
       - name: Apply database migrations
         if: steps.deploy_prereqs.outputs.can_deploy == 'true'
-        run: pnpm db:migrate
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::Skipping migrations; DATABASE_URL not set on this repo"
+            exit 0
+          fi
+          pnpm db:migrate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Deploy worker
