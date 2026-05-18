@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -22,6 +21,10 @@ export const metadata: Metadata = {
   description: "A modern Next.js starter with shadcn/ui, Drizzle, Better Auth, and more.",
 };
 
+// Hand-rolled FOUC script; next-themes 0.4.x ships an inline IIFE that SWC re-emits
+// with `__name(...)` keepNames calls whose helper isn't in scope at runtime.
+const themeFoucScript = `try{var s=localStorage.getItem('theme');if(s==='dark'||((!s||s==='system')&&window.matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,20 +32,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeFoucScript }} suppressHydrationWarning />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} suppressHydrationWarning>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <TooltipProvider>
-            <SiteHeader />
-            <main>{children}</main>
-            <SiteFooter />
-          </TooltipProvider>
-          <Toaster />
-        </ThemeProvider>
+        <TooltipProvider>
+          <SiteHeader />
+          <main>{children}</main>
+          <SiteFooter />
+        </TooltipProvider>
+        <Toaster />
       </body>
     </html>
   );
