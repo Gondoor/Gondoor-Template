@@ -30,10 +30,10 @@ describe("Next.js template boundaries and page naming", () => {
 
     for (const filePath of pageFiles) {
       const source = fs.readFileSync(filePath, "utf8");
-      expect(source).not.toMatch(/export\s+default\s+function\s+Home\s*\(/);
+      expect(source).not.toMatch(/export\s+default\s+(async\s+)?function\s+Home\s*\(/);
 
       const match = source.match(
-        /export\s+default\s+function\s+([A-Za-z0-9_]+)\s*\(/
+        /export\s+default\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(/
       );
       expect(match).toBeTruthy();
       expect(match?.[1]).toMatch(/Page$/);
