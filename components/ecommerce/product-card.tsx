@@ -51,7 +51,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
           <p className="text-lg font-semibold tabular-nums">
             {formatProductPrice(product)}
           </p>
-          <CheckoutButton productId={product.id} label="Buy now" />
+          <CheckoutButton tenantProductId={product.id} label="Buy now" />
         </div>
       </div>
     </Card>

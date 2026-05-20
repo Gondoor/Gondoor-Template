@@ -7,19 +7,17 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 interface CheckoutButtonProps {
-  productId: string;
-  planId?: string;
+  tenantProductId: string;
+  quantity?: number;
   label?: string;
   className?: string;
-  metadata?: Record<string, string>;
 }
 
 export function CheckoutButton({
-  productId,
-  planId,
+  tenantProductId,
+  quantity = 1,
   label = "Buy now",
   className,
-  metadata,
 }: CheckoutButtonProps) {
   const [error, setError] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -33,7 +31,7 @@ export function CheckoutButton({
         const response = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productId, planId, metadata }),
+          body: JSON.stringify({ tenantProductId, quantity }),
         });
         if (!response.ok) {
           const body = (await response.json().catch(() => ({}))) as {
