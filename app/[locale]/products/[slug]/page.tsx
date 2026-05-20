@@ -1,112 +1,117 @@
-import Image from "next/image";
-import { notFound } from "next/navigation";
-import type { Metadata } from "next";
-import { getWhopClient, WhopConfigurationError } from "@/lib/whop/client";
-import { CheckoutButton } from "@/components/ecommerce/checkout-button";
-import { formatProductPrice } from "@/lib/whop/format";
-import type { TenantProduct } from "@/types/product";
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { SiteHeader } from '@/components/layout/site-header';
+import { SiteFooter } from '@/components/layout/site-footer';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
-interface RouteParams {
-  params: Promise<{ slug: string; locale: string }>;
+interface ProductListing {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  currency: string;
+  billingPeriod: string | null;
+  imageUrl: string | null;
 }
 
-export async function generateMetadata({
-  params,
-}: RouteParams): Promise<Metadata> {
-  const { slug } = await params;
-  const product = await findProductBySlug(slug);
-  if (!product) {
-    return { title: "Product not found" };
+const GONDOOR_API_BASE = process.env.GONDOOR_API_BASE ?? '';
+const GONDOOR_API_KEY = process.env.GONDOOR_API_KEY ?? '';
+
+async function fetchProductBySlug(slug: string): Promise<ProductListing | null> {
+  if (!GONDOOR_API_BASE || !GONDOOR_API_KEY) return null;
+  try {
+    const response = await fetch(`${GONDOOR_API_BASE.replace(/\/+$/, '')}/v1/tenant-commerce/products`, {
+      headers: { Authorization: `Bearer ${GONDOOR_API_KEY}` },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    const json = (await response.json()) as { data?: ProductListing[] };
+    const products = Array.isArray(json.data) ? json.data : [];
+    return products.find((p) => p.slug === slug) ?? null;
+  } catch {
+    return null;
   }
+}
+
+function formatPrice(priceCents: number, currency: string, billingPeriod: string | null): string {
+  const formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: (currency || 'USD').toUpperCase(),
+    minimumFractionDigits: priceCents % 100 === 0 ? 0 : 2,
+  });
+  const base = formatter.format(priceCents / 100);
+  if (billingPeriod === 'monthly') return base + '/mo';
+  if (billingPeriod === 'yearly') return base + '/yr';
+  if (billingPeriod === 'weekly') return base + '/wk';
+  return base;
+}
+
+interface PageProps {
+  params: Promise<{ locale: string; slug: string }>;
+}
+
+export async function generateMetadata({ params }: PageProps) {
+  const { slug } = await params;
+  const product = await fetchProductBySlug(slug);
+  if (!product) return { title: 'Product not found' };
   return {
-    title: product.name,
-    description: product.description.slice(0, 160),
+    title: product.name + ' — Your Brand',
+    description: product.description?.slice(0, 160) || product.name,
   };
 }
 
-export default async function ProductDetailPage({ params }: RouteParams) {
+export default async function ProductDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const product = await findProductBySlug(slug);
-  if (!product) {
-    notFound();
-  }
+  const product = await fetchProductBySlug(slug);
+  if (!product) notFound();
 
   return (
-    <article className="mx-auto w-full max-w-5xl px-6 py-12 md:px-10 md:py-16">
-      <div className="grid grid-cols-1 gap-10 md:grid-cols-2">
-        <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-muted ring-1 ring-foreground/10">
-          {product.image ? (
-            <Image
-              src={product.image}
-              alt={product.name}
-              fill
-              priority
-              sizes="(min-width: 768px) 50vw, 100vw"
-              className="object-cover"
-            />
-          ) : (
-            <div
-              aria-hidden
-              className="size-full bg-gradient-to-br from-muted to-muted-foreground/10"
-            />
-          )}
-        </div>
-
-        <div className="flex flex-col gap-6">
-          <header className="flex flex-col gap-3">
-            <h1 className="font-heading text-3xl font-semibold tracking-tight md:text-4xl">
-              {product.name}
-            </h1>
-            <p className="text-2xl font-semibold tabular-nums">
-              {formatProductPrice(product)}
-            </p>
-          </header>
-
-          <p className="text-base/relaxed text-muted-foreground">
-            {product.description}
-          </p>
-
-          <dl className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-card p-4 text-sm">
-            <div>
-              <dt className="text-muted-foreground">Billing</dt>
-              <dd className="font-medium capitalize">
-                {product.billingPeriod === "one-time"
-                  ? "One-time"
-                  : product.billingPeriod}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Currency</dt>
-              <dd className="font-medium uppercase">{product.currency}</dd>
-            </div>
-          </dl>
-
-          <div className="mt-auto">
-            <CheckoutButton productId={product.id} label="Buy now" />
+    <>
+      <SiteHeader />
+      <main className="mx-auto w-full max-w-4xl px-6 py-16 text-slate-900">
+        <Link
+          href="/products"
+          className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+        >
+          ← Back to shop
+        </Link>
+        <article className="mt-6 grid grid-cols-1 gap-10 md:grid-cols-2">
+          <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
+            {product.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-sm text-slate-500">
+                No image
+              </div>
+            )}
           </div>
-        </div>
-      </div>
-    </article>
+          <div className="flex flex-col gap-6">
+            <header className="space-y-2">
+              <h1 className="text-3xl font-bold tracking-tight">{product.name}</h1>
+              <p className="text-2xl font-semibold">
+                {formatPrice(product.priceCents, product.currency, product.billingPeriod)}
+              </p>
+            </header>
+            {product.description ? (
+              <p className="whitespace-pre-line text-base text-slate-700">{product.description}</p>
+            ) : null}
+            <form action="/api/checkout" method="POST" className="mt-auto">
+              <input type="hidden" name="tenantProductId" value={product.id} />
+              <input type="hidden" name="quantity" value="1" />
+              <button
+                type="submit"
+                className="w-full rounded-full bg-[var(--primary,#0EA5E9)] px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:opacity-90 sm:w-auto"
+              >
+                Buy now
+              </button>
+            </form>
+          </div>
+        </article>
+      </main>
+      <SiteFooter />
+    </>
   );
-}
-
-async function findProductBySlug(
-  slug: string
-): Promise<TenantProduct | null> {
-  try {
-    const client = getWhopClient();
-    const direct = await client.getProduct(slug).catch(() => null);
-    if (direct && (direct.slug === slug || direct.id === slug)) {
-      return direct;
-    }
-    const list = await client.listProducts({ limit: 100 });
-    return list.products.find((p) => p.slug === slug || p.id === slug) ?? null;
-  } catch (error) {
-    if (error instanceof WhopConfigurationError) {
-      return null;
-    }
-    throw error;
-  }
 }
