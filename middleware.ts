@@ -1,17 +1,26 @@
-import createMiddleware from "next-intl/middleware";
-import { routing } from "./i18n/routing";
+import createMiddleware from 'next-intl/middleware';
+import { routing } from './i18n/routing';
+import { NextRequest, NextResponse } from 'next/server';
 
-export default createMiddleware(routing);
+const intlMiddleware = createMiddleware(routing);
 
-export const runtime = "experimental-edge";
+export default function middleware(request: NextRequest) {
+  const whop = request.nextUrl.searchParams.get('whop');
+  if (whop === 'test_mode') {
+    const cleanUrl = request.nextUrl.clone();
+    cleanUrl.searchParams.delete('whop');
+    const response = NextResponse.redirect(cleanUrl, 307);
+    response.cookies.set('gondoor-mode', 'test', {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 14400,
+      path: '/',
+    });
+    return response;
+  }
+  return intlMiddleware(request);
+}
 
 export const config = {
-  matcher: [
-    // Match all pathnames except for:
-    // - api routes
-    // - _next (Next.js internals)
-    // - _vercel (Vercel internals)
-    // - Files with extensions (e.g. favicon.ico)
-    "/((?!api|_next|_vercel|.*\\..*).*)",
-  ],
+  matcher: ['/((?!api|_next|_vercel|.*\..*).*)'],
 };
