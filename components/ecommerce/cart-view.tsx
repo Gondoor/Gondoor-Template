@@ -184,8 +184,8 @@ function CheckoutCtaRow({ items }: CheckoutCtaRowProps) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            productId: first.productId,
-            metadata: { cart_quantity: String(first.quantity) },
+            tenantProductId: first.productId,
+            quantity: first.quantity,
           }),
         });
         if (!response.ok) {
