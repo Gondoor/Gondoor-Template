@@ -8,6 +8,16 @@ This template deploys to Cloudflare Pages via `@opennextjs/cloudflare`. Unlike t
 
 **Do NOT add `export const runtime = 'edge'` to files in `app/`.** OpenNext handles the runtime configuration. The only file that needs a runtime export is `middleware.ts`, which uses `export const runtime = "experimental-edge"`.
 
+## Tenant Commerce Checkout Contract
+
+- Browser code posts product selections to tenant-local `POST /api/checkout` only. Do not call Gondoor backend checkout URLs or direct Whop checkout session APIs from browser code.
+- `tenantProductId` is public catalog/form data from `GET /v1/tenant-commerce/products`. Keep it in product cards, forms, buttons, or cart state; product IDs must not be stored in Cloudflare secrets.
+- `app/api/checkout/route.ts` must read server-only `GONDOOR_API_BASE`, `GONDOOR_API_KEY`, and `GONDOOR_TENANT_ID`.
+- The upstream checkout payload to `/v1/tenant-commerce/checkout` must include `tenantId: GONDOOR_TENANT_ID`, top-level `tenantProductId`, and `cart.items`.
+- Never use `cart.lines` for Gondoor tenant checkout.
+- Never expose `GONDOOR_API_KEY`, `GONDOOR_WEBHOOK_SECRET`, `gdr_`, or `whsec_` in client code or `NEXT_PUBLIC_*` variables. Do not create `NEXT_PUBLIC_GONDOOR_API_KEY`.
+- Why: route tests lock this contract, and implementation intent is to keep tenant product IDs in public form/catalog data while secrets and tenant credentials stay server-only.
+
 ## Diagnostic Error Boundaries: DO NOT REMOVE
 
 `app/error.tsx` and `app/global-error.tsx` are diagnostic boundaries that the
