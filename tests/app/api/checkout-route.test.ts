@@ -1,20 +1,5 @@
-import {
-  WhopApiError,
-  WhopConfigurationError,
-} from "@/lib/whop/client";
-
-const createCheckoutSession = jest.fn();
-
-jest.mock("@/lib/whop/client", () => {
-  const actual = jest.requireActual("@/lib/whop/client");
-  return {
-    ...actual,
-    getWhopClient: () => ({
-      createCheckoutSession: (...args: unknown[]) =>
-        createCheckoutSession(...args),
-    }),
-  };
-});
+const fetchMock = jest.fn<Promise<Response>, [string | URL | Request, RequestInit | undefined]>();
+const consoleErrorMock = jest.spyOn(console, "error").mockImplementation(() => undefined);
 
 jest.mock("next/server", () => ({
   NextResponse: {
@@ -23,115 +8,208 @@ jest.mock("next/server", () => ({
       status: init?.status ?? 200,
       headers: init?.headers,
     }),
+    redirect: (url: string | URL, init?: { status?: number }) => ({
+      status: init?.status ?? 307,
+      url: String(url),
+    }),
   },
 }));
 
-import { POST } from "@/app/api/checkout/route";
+const API_BASE = "https://api.gondoor.test";
+const API_KEY = "gdr_test_key";
+const TENANT_ID = "61fdf61c-2f4a-4855-be3d-395bb738b493";
+const TENANT_PRODUCT_ID = "f0f970f6-5f6a-4f36-9e28-c9a5d5d1888e";
+const SETUP_CHECKOUT_URL = "https://checkout.whop.com/setup/chk_123";
 
-function createRequest(body: unknown, headers: Record<string, string> = {}): never {
+const originalEnv = {
+  GONDOOR_API_BASE: process.env.GONDOOR_API_BASE,
+  GONDOOR_API_KEY: process.env.GONDOOR_API_KEY,
+  GONDOOR_TENANT_ID: process.env.GONDOOR_TENANT_ID,
+};
+
+interface MockRouteResponse {
+  body?: unknown;
+  status: number;
+  headers?: HeadersInit;
+  url?: string;
+}
+
+type CheckoutEnvOverrides = {
+  GONDOOR_API_BASE?: string;
+  GONDOOR_API_KEY?: string;
+  GONDOOR_TENANT_ID?: string;
+};
+
+function restoreOriginalEnv(): void {
+  for (const [key, value] of Object.entries(originalEnv)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function applyCheckoutEnv(overrides: CheckoutEnvOverrides = {}): void {
+  process.env.GONDOOR_API_BASE = API_BASE;
+  process.env.GONDOOR_API_KEY = API_KEY;
+  process.env.GONDOOR_TENANT_ID = TENANT_ID;
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+async function loadPost(overrides?: CheckoutEnvOverrides) {
+  jest.resetModules();
+  applyCheckoutEnv(overrides);
+  const routeModule = await import("@/app/api/checkout/route");
+  return routeModule.POST;
+}
+
+function createJsonRequest(
+  body: unknown,
+  headers: Record<string, string> = {},
+): Request {
+  const normalizedHeaders = new Map(
+    Object.entries({
+      "content-type": "application/json",
+      ...headers,
+    }).map(([key, value]) => [key.toLowerCase(), value]),
+  );
+
   return {
-    url: headers["x-forwarded-host"]
-      ? `https://${headers["x-forwarded-host"]}/api/checkout`
-      : "https://tenant.example.com/api/checkout",
     headers: {
-      get: (name: string) => headers[name.toLowerCase()] ?? null,
+      get: (name: string) => normalizedHeaders.get(name.toLowerCase()) ?? null,
     },
     json: async () => body,
-  } as never;
+  } as Request;
+}
+
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
+  const status = init?.status ?? 200;
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as Response;
 }
 
 describe("POST /api/checkout", () => {
   beforeEach(() => {
-    createCheckoutSession.mockReset();
-  });
-
-  it("returns 400 when body is missing productId", async () => {
-    const response = await POST(createRequest({}));
-    expect(response.status).toBe(400);
-    expect(createCheckoutSession).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 on malformed JSON", async () => {
-    const badRequest = {
-      url: "https://tenant.example.com/api/checkout",
-      headers: { get: () => null },
-      json: async () => {
-        throw new Error("bad json");
-      },
-    } as never;
-    const response = await POST(badRequest);
-    expect(response.status).toBe(400);
-  });
-
-  it("forwards productId and metadata, returns session URL", async () => {
-    createCheckoutSession.mockResolvedValue({
-      url: "https://whop.com/checkout/sess_abc",
-      sessionId: "sess_abc",
-    });
-
-    const response = await POST(
-      createRequest(
-        { productId: "prod_xyz", metadata: { campaign: "spring" } },
-        { "x-forwarded-host": "tenant.example.com", "x-forwarded-proto": "https" }
-      )
+    fetchMock.mockReset().mockResolvedValue(
+      jsonResponse({ setupCheckoutUrl: SETUP_CHECKOUT_URL }, { status: 202 }),
     );
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    restoreOriginalEnv();
+  });
+
+  afterAll(() => {
+    consoleErrorMock.mockRestore();
+  });
+
+  it("posts the Gondoor tenant-commerce checkout contract upstream", async () => {
+    const POST = await loadPost();
+
+    const response = (await POST(
+      createJsonRequest({
+        tenantProductId: TENANT_PRODUCT_ID,
+        quantity: 2,
+      }),
+    )) as MockRouteResponse;
 
     expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("https://api.gondoor.test/v1/tenant-commerce/checkout");
+    expect(init?.method).toBe("POST");
+    expect(init?.headers).toMatchObject({
+      "Content-Type": "application/json",
+      Authorization: "Bearer gdr_test_key",
+    });
+
+    const bodyText = String(init?.body);
+    expect(bodyText).not.toContain("lines");
+    expect(JSON.parse(bodyText)).toEqual({
+      tenantId: TENANT_ID,
+      tenantProductId: TENANT_PRODUCT_ID,
+      cart: {
+        items: [
+          {
+            tenantProductId: TENANT_PRODUCT_ID,
+            quantity: 2,
+          },
+        ],
+      },
+    });
+  });
+
+  it("returns 503 when GONDOOR_TENANT_ID is missing", async () => {
+    const POST = await loadPost({ GONDOOR_TENANT_ID: undefined });
+
+    const response = (await POST(
+      createJsonRequest({
+        tenantProductId: TENANT_PRODUCT_ID,
+        quantity: 2,
+      }),
+    )) as MockRouteResponse;
+
+    expect(response.status).toBe(503);
     expect(response.body).toEqual({
-      url: "https://whop.com/checkout/sess_abc",
-      sessionId: "sess_abc",
+      error: "Checkout is not configured yet for this site.",
     });
-    expect(createCheckoutSession).toHaveBeenCalledWith({
-      productId: "prod_xyz",
-      planId: undefined,
-      metadata: { campaign: "spring" },
-      successUrl:
-        "https://tenant.example.com/checkout/success?session_id={CHECKOUT_SESSION_ID}",
-      cancelUrl: "https://tenant.example.com/checkout/cancel",
-    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("includes locale prefix in URLs when detected from referer", async () => {
-    createCheckoutSession.mockResolvedValue({
-      url: "https://whop.com/checkout/sess_de",
-      sessionId: "sess_de",
-    });
-    await POST(
-      createRequest(
-        { productId: "prod_xyz" },
+  it("returns 400 when tenantProductId is missing", async () => {
+    const POST = await loadPost();
+
+    const response = (await POST(createJsonRequest({ quantity: 2 }))) as MockRouteResponse;
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "tenantProductId is required." });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves upstream 400 checkout contract responses", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: "tenantId is required" }, { status: 400 }),
+    );
+    const POST = await loadPost();
+
+    const response = (await POST(
+      createJsonRequest({
+        tenantProductId: TENANT_PRODUCT_ID,
+        quantity: 2,
+      }),
+    )) as MockRouteResponse;
+
+    expect(response.status).toBe(400);
+  });
+
+  it("redirects HTML accept requests to setupCheckoutUrl", async () => {
+    const POST = await loadPost();
+
+    const response = (await POST(
+      createJsonRequest(
         {
-          "x-forwarded-host": "tenant.example.com",
-          "x-forwarded-proto": "https",
-          referer: "https://tenant.example.com/de/products/some-product",
-        }
-      )
-    );
-    expect(createCheckoutSession).toHaveBeenCalledWith(
-      expect.objectContaining({
-        successUrl:
-          "https://tenant.example.com/de/checkout/success?session_id={CHECKOUT_SESSION_ID}",
-        cancelUrl: "https://tenant.example.com/de/checkout/cancel",
-      })
-    );
-  });
+          tenantProductId: TENANT_PRODUCT_ID,
+          quantity: 2,
+        },
+        { accept: "text/html" },
+      ),
+    )) as MockRouteResponse;
 
-  it("returns 500 when Whop is not configured", async () => {
-    createCheckoutSession.mockRejectedValue(
-      new WhopConfigurationError("missing key")
-    );
-    const response = await POST(
-      createRequest({ productId: "prod_xyz" })
-    );
-    expect(response.status).toBe(500);
-  });
-
-  it("returns 502 when Whop API errors", async () => {
-    createCheckoutSession.mockRejectedValue(
-      new WhopApiError(502, { error: "upstream" })
-    );
-    const response = await POST(
-      createRequest({ productId: "prod_xyz" })
-    );
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(303);
+    expect(response.url).toBe(SETUP_CHECKOUT_URL);
   });
 });

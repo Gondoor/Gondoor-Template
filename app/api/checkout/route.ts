@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 const GONDOOR_API_BASE = process.env.GONDOOR_API_BASE ?? '';
 const GONDOOR_API_KEY = process.env.GONDOOR_API_KEY ?? '';
+const GONDOOR_TENANT_ID = process.env.GONDOOR_TENANT_ID ?? '';
 
 interface ParsedCart {
   tenantProductId: string;
@@ -30,7 +31,7 @@ async function parseRequest(request: Request): Promise<ParsedCart | null> {
 }
 
 export async function POST(request: Request) {
-  if (!GONDOOR_API_BASE || !GONDOOR_API_KEY) {
+  if (!GONDOOR_API_BASE || !GONDOOR_API_KEY || !GONDOOR_TENANT_ID) {
     return NextResponse.json(
       { error: 'Checkout is not configured yet for this site.' },
       { status: 503, headers: { 'Cache-Control': 'no-store' } },
@@ -54,9 +55,10 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${GONDOOR_API_KEY}`,
       },
       body: JSON.stringify({
+        tenantId: GONDOOR_TENANT_ID,
         tenantProductId: parsed.tenantProductId,
         cart: {
-          lines: [{ tenantProductId: parsed.tenantProductId, quantity: parsed.quantity }],
+          items: [{ tenantProductId: parsed.tenantProductId, quantity: parsed.quantity }],
         },
       }),
     },
@@ -64,10 +66,11 @@ export async function POST(request: Request) {
 
   if (!upstream || !upstream.ok) {
     const detail = upstream ? await upstream.text().catch(() => '') : 'upstream unreachable';
+    const status = upstream && upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502;
     console.error('[checkout] upstream failed', upstream?.status, detail);
     return NextResponse.json(
       { error: 'Checkout failed. Please try again.' },
-      { status: 502, headers: { 'Cache-Control': 'no-store' } },
+      { status, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 
