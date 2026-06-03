@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 // Apply Drizzle migrations against the Neon Postgres database for this tenant.
 //
-// Why this exists: `drizzle-kit migrate` auto-picks the @neondatabase/serverless
-// driver when both it and pg are installed, and that path silently exits 1 in
-// CI deploys (~0.5s, no logs). Forcing the pg Pool path through the explicit
-// drizzle-orm/node-postgres/migrator entry bypasses the picker and gives us
-// reliable migrations + readable error output on every deploy.
+// Why this exists: `drizzle-kit migrate` auto-picks drivers when multiple
+// Postgres drivers are installed. Use the explicit Neon WebSocket migrator so
+// CI deploys avoid direct TCP access to Neon port 5432 while keeping Drizzle's
+// transactional migration path.
 
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import pg from 'pg';
-
-const { Pool } = pg;
+import { Pool } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import { migrate } from 'drizzle-orm/neon-serverless/migrator';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
