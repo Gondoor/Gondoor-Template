@@ -16,4 +16,12 @@ describe("landing path avoids dangerouslySetInnerHTML", () => {
       expect(source).not.toContain("dangerouslySetInnerHTML")
     }
   })
+
+  it("does not include anchor color inheritance in landing render paths", () => {
+    for (const file of FILES) {
+      const absolutePath = path.join(process.cwd(), file)
+      const source = fs.readFileSync(absolutePath, "utf8")
+      expect(source).not.toContain("a { color: inherit; }")
+    }
+  })
 })
