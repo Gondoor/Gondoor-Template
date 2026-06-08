@@ -14,6 +14,7 @@ This template deploys to Cloudflare Pages via `@opennextjs/cloudflare`. Unlike t
 - `tenantProductId` is public catalog/form data from `GET /v1/tenant-commerce/products`. Keep it in product cards, forms, buttons, or cart state; product IDs must not be stored in Cloudflare secrets.
 - `app/api/checkout/route.ts` must read server-only `GONDOOR_API_BASE`, `GONDOOR_API_KEY`, and `GONDOOR_TENANT_ID`.
 - The upstream checkout payload to `/v1/tenant-commerce/checkout` must include `tenantId: GONDOOR_TENANT_ID`, top-level `tenantProductId`, and `cart.items`.
+- Preserve upstream checkout validation/product 4xx responses as JSON 400/422. The verifier posts all-zero UUID `tenantProductId` to `POST /api/checkout`; invalid product responses must not be collapsed into 502. Network failures and upstream 5xx may return 502.
 - Never use `cart.lines` for Gondoor tenant checkout.
 - Never expose `GONDOOR_API_KEY`, `GONDOOR_WEBHOOK_SECRET`, `gdr_`, or `whsec_` in client code or `NEXT_PUBLIC_*` variables. Do not create `NEXT_PUBLIC_GONDOOR_API_KEY`.
 - Why: route tests lock this contract, and implementation intent is to keep tenant product IDs in public form/catalog data while secrets and tenant credentials stay server-only.
