@@ -19,6 +19,7 @@ const API_BASE = "https://api.gondoor.test";
 const API_KEY = "gdr_test_key";
 const TENANT_ID = "61fdf61c-2f4a-4855-be3d-395bb738b493";
 const TENANT_PRODUCT_ID = "f0f970f6-5f6a-4f36-9e28-c9a5d5d1888e";
+const VERIFIER_TENANT_PRODUCT_ID = "00000000-0000-0000-0000-000000000000";
 const SETUP_CHECKOUT_URL = "https://checkout.whop.com/setup/chk_123";
 
 const originalEnv = {
@@ -180,7 +181,7 @@ describe("POST /api/checkout", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("preserves upstream 400 checkout contract responses", async () => {
+  it("preserves upstream 400 for verifier checkout probe", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ error: "tenantId is required" }, { status: 400 }),
     );
@@ -188,12 +189,58 @@ describe("POST /api/checkout", () => {
 
     const response = (await POST(
       createJsonRequest({
-        tenantProductId: TENANT_PRODUCT_ID,
-        quantity: 2,
+        tenantProductId: VERIFIER_TENANT_PRODUCT_ID,
+        quantity: 1,
       }),
     )) as MockRouteResponse;
 
     expect(response.status).toBe(400);
+  });
+
+  it("preserves upstream 422 for verifier checkout probe", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: "tenantProductId is invalid" }, { status: 422 }),
+    );
+    const POST = await loadPost();
+
+    const response = (await POST(
+      createJsonRequest({
+        tenantProductId: VERIFIER_TENANT_PRODUCT_ID,
+        quantity: 1,
+      }),
+    )) as MockRouteResponse;
+
+    expect(response.status).toBe(422);
+  });
+
+  it("returns 502 when upstream checkout returns 500", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: "internal checkout failure" }, { status: 500 }),
+    );
+    const POST = await loadPost();
+
+    const response = (await POST(
+      createJsonRequest({
+        tenantProductId: VERIFIER_TENANT_PRODUCT_ID,
+        quantity: 1,
+      }),
+    )) as MockRouteResponse;
+
+    expect(response.status).toBe(502);
+  });
+
+  it("returns 502 when upstream checkout is unreachable", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+    const POST = await loadPost();
+
+    const response = (await POST(
+      createJsonRequest({
+        tenantProductId: VERIFIER_TENANT_PRODUCT_ID,
+        quantity: 1,
+      }),
+    )) as MockRouteResponse;
+
+    expect(response.status).toBe(502);
   });
 
   it("redirects HTML accept requests to setupCheckoutUrl", async () => {
