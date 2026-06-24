@@ -1,4 +1,6 @@
-const fetchMock = jest.fn<Promise<Response>, [string | URL | Request, RequestInit | undefined]>();
+export {};
+
+const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
 const consoleErrorMock = jest.spyOn(console, "error").mockImplementation(() => undefined);
 
 jest.mock("next/server", () => ({
@@ -106,7 +108,7 @@ describe("POST /api/checkout", () => {
     fetchMock.mockReset().mockResolvedValue(
       jsonResponse({ setupCheckoutUrl: SETUP_CHECKOUT_URL }, { status: 202 }),
     );
-    global.fetch = fetchMock as unknown as typeof fetch;
+    global.fetch = fetchMock;
   });
 
   afterEach(() => {
