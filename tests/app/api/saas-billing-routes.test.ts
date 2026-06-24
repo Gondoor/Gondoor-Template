@@ -10,10 +10,14 @@ jest.mock("next/server", () => ({
       status: init?.status ?? 200,
       headers: init?.headers,
     }),
-    redirect: (url: string | URL, init?: { status?: number }) => ({
-      status: init?.status ?? 307,
-      url: String(url),
-    }),
+    redirect: (url: string | URL, init?: { status?: number }) => {
+      const responseHeaders = new Headers();
+      return {
+        status: init?.status ?? 307,
+        url: String(url),
+        headers: responseHeaders,
+      };
+    },
   },
 }));
 
@@ -47,7 +51,7 @@ const originalEnv = {
 interface MockRouteResponse {
   body?: unknown;
   status: number;
-  headers?: HeadersInit;
+  headers?: Headers | HeadersInit;
   url?: string;
 }
 
@@ -110,6 +114,11 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
     status,
     text: async () => JSON.stringify(body),
   } as Response;
+}
+
+function readHeader(headers: Headers | HeadersInit | undefined, name: string): string | null {
+  if (headers instanceof Headers) return headers.get(name);
+  return null;
 }
 
 function authenticatedSession() {
@@ -188,9 +197,35 @@ describe("tenant SaaS billing API routes", () => {
 
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(String(init?.body))).toMatchObject({
-      successUrl: "https://tenant.example.com/billing?checkout=success",
-      cancelUrl: "https://tenant.example.com/billing?checkout=cancel",
+      successUrl: "https://tenant.example.com/?billing=success",
+      cancelUrl: "https://tenant.example.com/?billing=cancel",
     });
+  });
+
+  it("rejects cross-origin checkout return URLs", async () => {
+    const routeModule = await import("@/app/api/billing/checkout/route");
+
+    const response = (await routeModule.POST(
+      createJsonRequest({
+        successUrl: "https://evil.example/checkout-done",
+        cancelUrl: "https://tenant.example.com/?billing=cancel",
+      }),
+    )) as MockRouteResponse;
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Checkout URLs must stay on this site." });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a blank SaaS mode env value as absent", async () => {
+    process.env.GONDOOR_SAAS_MODE = "";
+    const routeModule = await import("@/app/api/billing/checkout/route");
+
+    const response = (await routeModule.POST(createJsonRequest({}))) as MockRouteResponse;
+
+    expect(response.status).toBe(200);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init?.headers).not.toMatchObject({ "x-gondoor-saas-mode": "" });
   });
 
   it("returns 503 for signed-in users when SaaS billing env is missing", async () => {
@@ -239,5 +274,6 @@ describe("tenant SaaS billing API routes", () => {
 
     expect(response.status).toBe(303);
     expect(response.url).toBe(MANAGE_URL);
+    expect(readHeader(response.headers, "Cache-Control")).toBe("no-store");
   });
 });

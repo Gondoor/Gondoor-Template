@@ -7,7 +7,10 @@ const tenantSaasBillingConfigSchema = z
     GONDOOR_API_BASE: z.string().trim().min(1),
     GONDOOR_TENANT_ID: z.string().trim().min(1),
     GONDOOR_SAAS_APP_API_KEY: z.string().trim().min(1),
-    GONDOOR_SAAS_MODE: z.enum(["live", "test"]).optional(),
+    GONDOOR_SAAS_MODE: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.enum(["live", "test"]).optional(),
+    ),
   })
   .transform((env) => ({
     apiBase: env.GONDOOR_API_BASE.replace(/\/+$/, ""),

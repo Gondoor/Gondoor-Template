@@ -15,7 +15,9 @@ export async function POST(request: Request) {
     const billing = await getTenantSaasManageUrl(user);
     const accept = request.headers.get("accept") ?? "";
     if (accept.includes("text/html")) {
-      return NextResponse.redirect(billing.manageUrl, { status: 303 });
+      const response = NextResponse.redirect(billing.manageUrl, { status: 303 });
+      response.headers.set("Cache-Control", "no-store");
+      return response;
     }
     return NextResponse.json(
       { url: billing.manageUrl },
