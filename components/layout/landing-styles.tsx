@@ -1,10 +1,10 @@
-import type { CSSProperties, ReactNode } from "react"
-import type { LandingDesignTokens } from "@/lib/landing/schema"
+import type { CSSProperties, ReactNode } from "react";
+import type { LandingDesignTokens } from "@/lib/landing/schema";
 
 type LandingStylesProps = {
-  tokens: LandingDesignTokens
-  children: ReactNode
-}
+  tokens: LandingDesignTokens;
+  children: ReactNode;
+};
 
 function getLandingStyleVariables(tokens: LandingDesignTokens): CSSProperties {
   return {
@@ -20,7 +20,7 @@ function getLandingStyleVariables(tokens: LandingDesignTokens): CSSProperties {
     "--landing-max-width": tokens.maxWidth,
     "--landing-radius": tokens.radius,
     "--landing-section-gap": tokens.sectionGap,
-  } as CSSProperties
+  } as CSSProperties;
 }
 
 export function LandingStyles({ tokens, children }: LandingStylesProps) {
@@ -28,9 +28,9 @@ export function LandingStyles({ tokens, children }: LandingStylesProps) {
     <div
       data-landing-root="v1"
       style={getLandingStyleVariables(tokens)}
-      className="bg-[var(--landing-background)] text-[var(--landing-foreground)]"
+      className="min-h-screen bg-[var(--landing-background)] text-[var(--landing-foreground)]"
     >
       {children}
     </div>
-  )
+  );
 }
