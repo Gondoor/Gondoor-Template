@@ -2,10 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { LandingStyles } from "@/components/layout/landing-styles";
-import { SiteHeader } from "@/components/layout/site-header";
-import { SiteFooter } from "@/components/layout/site-footer";
-import { getLandingSchema } from "@/lib/landing/schema-source";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gondoor Template",
-  description:
-    "A modern Next.js starter with shadcn/ui, Drizzle, Better Auth, and more.",
+  title: "Vectorine",
+  description: "Premium site for Vectorine.",
+  applicationName: "Vectorine",
 };
 
 // Hand-rolled FOUC script; next-themes 0.4.x ships an inline IIFE that SWC re-emits
@@ -33,8 +29,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const landingSchema = getLandingSchema();
-
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -46,15 +40,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
+        data-mvp-quality="polished-foundation-v1"
       >
-        <LandingStyles tokens={landingSchema.tokens}>
-          <TooltipProvider>
-            <SiteHeader header={landingSchema.header} />
-            <main>{children}</main>
-            <SiteFooter footer={landingSchema.footer} />
-          </TooltipProvider>
-          <Toaster />
-        </LandingStyles>
+        <TooltipProvider>{children}</TooltipProvider>
+        <Toaster />
       </body>
     </html>
   );

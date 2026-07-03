@@ -1,12 +1,12 @@
 'use client';
-export default function GlobalError({ error }: { error: Error & { digest?: string } }) {
+export default function ErrorBoundary({ error }: { error: Error & { digest?: string } }) {
   return (
-    <html><body style={{ fontFamily: 'system-ui', padding: 40, color: '#333' }}>
-      <h1>Something went wrong</h1>
+    <div style={{ fontFamily: 'system-ui', padding: 40, color: '#333' }}>
+      <h2>Page Error</h2>
       <pre style={{ whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: 16, borderRadius: 8 }}>
         {error.message}
       </pre>
       <p style={{ fontSize: 12, color: '#999' }}>digest: {error.digest ?? 'n/a'}</p>
-    </body></html>
+    </div>
   );
 }

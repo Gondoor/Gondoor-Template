@@ -1,8 +1,14 @@
 {
   "app": {
-    "title": "Gondoor Template",
-    "description": "A modern Next.js starter with shadcn/ui, Drizzle, Better Auth, and more.",
+    "title": "Vectorine",
+    "description": "Premium site for Vectorine.",
     "cta": "Get Started",
     "stack": "Built with"
+  },
+  "metadata": {
+    "title": "Vectorine",
+    "description": "Premium site for Vectorine.",
+    "applicationName": "Vectorine",
+    "siteName": "Vectorine"
   }
 }
