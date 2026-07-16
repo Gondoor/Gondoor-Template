@@ -1,0 +1,386 @@
+name: Deploy tenant Worker to WfP
+
+on:
+  workflow_call:
+    inputs:
+      generation:
+        description: Immutable Gondoor foundation task UUID
+        required: true
+        type: string
+    secrets:
+      DATABASE_URL:
+        required: true
+      COMPANY_ID:
+        required: true
+      NODE_ENV:
+        required: true
+      BETTER_AUTH_SECRET:
+        required: true
+      BETTER_AUTH_URL:
+        required: true
+      BETTER_AUTH_TRUSTED_ORIGINS:
+        required: true
+      NEXT_PUBLIC_APP_URL:
+        required: true
+      GONDOOR_API_BASE:
+        required: true
+      GONDOOR_API_KEY:
+        required: true
+      GONDOOR_TENANT_ID:
+        required: true
+      GONDOOR_WEBHOOK_SECRET:
+        required: true
+      GONDOOR_SAAS_APP_API_KEY:
+        required: true
+      GONDOOR_SAAS_VERIFICATION_SECRET:
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: wfp-${{ inputs.generation }}
+  queue: max
+
+jobs:
+  build:
+    name: Build tenant artifact
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Validate generation
+        env:
+          GENERATION: ${{ inputs.generation }}
+        run: |
+          if [[ ! "$GENERATION" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ || "$GENERATION" == 00000000-0000-0000-0000-000000000000 ]]; then
+            echo "::error::generation must be a canonical UUID"
+            exit 1
+          fi
+
+      - name: Check out caller source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build OpenNext artifact
+        env:
+          BETTER_AUTH_SECRET: placeholder-build-only
+          BETTER_AUTH_URL: https://placeholder.workers.dev
+        run: pnpm exec opennextjs-cloudflare build
+
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo "::warning::Skipping migrations; DATABASE_URL is empty"
+            exit 0
+          fi
+          pnpm db:migrate
+
+      - name: Stage deploy artifact
+        run: |
+          test -s .open-next/worker.js
+          test -d .open-next/assets
+          mkdir -p "$RUNNER_TEMP/wfp-artifact"
+          cp -a .open-next "$RUNNER_TEMP/wfp-artifact/.open-next"
+
+      - name: Upload immutable deploy artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wfp-open-next-${{ github.sha }}-${{ inputs.generation }}
+          path: ${{ runner.temp }}/wfp-artifact/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    name: Deploy normalized artifact
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      id-token: write
+    steps:
+      - name: Validate artifact identity
+        env:
+          ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
+        run: |
+          [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+
+      - name: Download immutable artifact by ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: ${{ runner.temp }}/wfp-download
+          digest-mismatch: error
+
+      - name: Validate and normalize artifact
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/wfp-download
+          COMMIT_SHA: ${{ github.sha }}
+          GENERATION: ${{ inputs.generation }}
+          NORMALIZED_TAR: ${{ runner.temp }}/wfp-upload-v1.tar
+          MANIFEST_PATH: ${{ runner.temp }}/wfp-download/gondoor-artifact-manifest.json
+        run: |
+          node <<'NODE'
+          const { createHash } = require('node:crypto');
+          const { lstatSync, readdirSync, readFileSync, writeFileSync } = require('node:fs');
+          const { join, relative, sep } = require('node:path');
+
+          const root = process.env.ARTIFACT_ROOT;
+          const MAX_ARCHIVE_ENTRIES = 25000;
+          const maxFiles = 20000;
+          const maxFileBytes = 25 * 1024 * 1024;
+          const maxManifestBytes = 1024 * 1024;
+          const maxPathBytes = 1024;
+          const maxPathDepth = 64;
+          const maxTotalBytes = 256 * 1024 * 1024;
+          const openNext = join(root, '.open-next');
+          const worker = join(openNext, 'worker.js');
+          const assets = join(openNext, 'assets');
+          const entries = readdirSync(root);
+          if (entries.length !== 1 || entries[0] !== '.open-next') {
+            throw new Error('artifact root must contain only .open-next');
+          }
+          if (!lstatSync(worker).isFile() || lstatSync(worker).size === 0) {
+            throw new Error('.open-next/worker.js must be a nonempty regular file');
+          }
+          if (!lstatSync(assets).isDirectory()) {
+            throw new Error('.open-next/assets must be a directory');
+          }
+
+          const files = [];
+          const normalizedPaths = new Set();
+          let entryCount = 0;
+          let totalBytes = 0;
+          function visit(path) {
+            entryCount += 1;
+            if (entryCount > MAX_ARCHIVE_ENTRIES) {
+              throw new Error('artifact exceeds archive-entry limit');
+            }
+            const stat = lstatSync(path);
+            const archivePath = relative(root, path).split(sep).join('/');
+            const pathParts = archivePath.split('/');
+            if (
+              archivePath.startsWith('/') ||
+              archivePath !== archivePath.normalize('NFC') ||
+              Buffer.byteLength(archivePath, 'utf8') > maxPathBytes ||
+              pathParts.length > maxPathDepth ||
+              pathParts.some((part) => part === '' || part === '.' || part === '..') ||
+              /[\\\u0000-\u001f\u007f]/u.test(archivePath)
+            ) {
+              throw new Error(`unsafe artifact path: ${JSON.stringify(archivePath)}`);
+            }
+            if (normalizedPaths.has(archivePath)) {
+              throw new Error(`duplicate normalized artifact path: ${archivePath}`);
+            }
+            normalizedPaths.add(archivePath);
+            if (stat.isDirectory()) {
+              for (const child of readdirSync(path).sort()) visit(join(path, child));
+              return;
+            }
+            if (!stat.isFile() || stat.nlink !== 1) {
+              throw new Error(`artifact entry must be a non-hardlinked regular file: ${archivePath}`);
+            }
+            if (files.length >= maxFiles) {
+              throw new Error('artifact exceeds file-count limit');
+            }
+            if (stat.size > maxFileBytes) {
+              throw new Error(`artifact file exceeds size limit: ${archivePath}`);
+            }
+            if (totalBytes + stat.size > maxTotalBytes) {
+              throw new Error('artifact exceeds uncompressed-size limit');
+            }
+            totalBytes += stat.size;
+            const contents = readFileSync(path);
+            files.push({
+              path: archivePath,
+              sha256: createHash('sha256').update(contents).digest('hex'),
+              size: contents.length,
+            });
+          }
+          visit(openNext);
+          if (entryCount + 1 > MAX_ARCHIVE_ENTRIES) {
+            throw new Error('artifact plus generated manifest exceeds archive-entry limit');
+          }
+          const manifest = {
+            format: 'wfp-upload-v1',
+            generation: process.env.GENERATION,
+            commitSha: process.env.COMMIT_SHA,
+            files,
+            totalBytes,
+          };
+          const manifestContents = `${JSON.stringify(manifest)}\n`;
+          const manifestBytes = Buffer.byteLength(manifestContents, 'utf8');
+          if (manifestBytes > maxManifestBytes || totalBytes + manifestBytes > maxTotalBytes) {
+            throw new Error('artifact manifest exceeds size limit');
+          }
+          writeFileSync(process.env.MANIFEST_PATH, manifestContents, { mode: 0o600 });
+          NODE
+
+          LC_ALL=C TZ=UTC tar \
+            --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            --format=posix \
+            --pax-option=delete=atime,delete=ctime \
+            -cf "$NORMALIZED_TAR" \
+            -C "$ARTIFACT_ROOT" \
+            .open-next gondoor-artifact-manifest.json
+          artifact_bytes="$(stat -c '%s' "$NORMALIZED_TAR")"
+          if (( artifact_bytes > 256 * 1024 * 1024 )); then
+            echo "::error::normalized artifact exceeds size limit"
+            exit 1
+          fi
+          sha256sum "$NORMALIZED_TAR" | cut -d ' ' -f 1 > "$NORMALIZED_TAR.sha256"
+          printf '%s\n' "$artifact_bytes" > "$NORMALIZED_TAR.bytes"
+          chmod 600 "$NORMALIZED_TAR" "$NORMALIZED_TAR.sha256" "$NORMALIZED_TAR.bytes"
+
+      - name: Prepare runtime secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          COMPANY_ID: ${{ secrets.COMPANY_ID }}
+          NODE_ENV: ${{ secrets.NODE_ENV }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          BETTER_AUTH_URL: ${{ secrets.BETTER_AUTH_URL }}
+          BETTER_AUTH_TRUSTED_ORIGINS: ${{ secrets.BETTER_AUTH_TRUSTED_ORIGINS }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          GONDOOR_API_BASE: ${{ secrets.GONDOOR_API_BASE }}
+          GONDOOR_API_KEY: ${{ secrets.GONDOOR_API_KEY }}
+          GONDOOR_TENANT_ID: ${{ secrets.GONDOOR_TENANT_ID }}
+          GONDOOR_WEBHOOK_SECRET: ${{ secrets.GONDOOR_WEBHOOK_SECRET }}
+          GONDOOR_SAAS_APP_API_KEY: ${{ secrets.GONDOOR_SAAS_APP_API_KEY }}
+          GONDOOR_SAAS_VERIFICATION_SECRET: ${{ secrets.GONDOOR_SAAS_VERIFICATION_SECRET }}
+          RUNTIME_SECRETS: ${{ runner.temp }}/wfp-runtime-secrets.json
+        run: |
+          umask 077
+          jq -n '{
+            DATABASE_URL: env.DATABASE_URL,
+            COMPANY_ID: env.COMPANY_ID,
+            NODE_ENV: env.NODE_ENV,
+            BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+            BETTER_AUTH_URL: env.BETTER_AUTH_URL,
+            BETTER_AUTH_TRUSTED_ORIGINS: env.BETTER_AUTH_TRUSTED_ORIGINS,
+            NEXT_PUBLIC_APP_URL: env.NEXT_PUBLIC_APP_URL,
+            GONDOOR_API_BASE: env.GONDOOR_API_BASE,
+            GONDOOR_API_KEY: env.GONDOOR_API_KEY,
+            GONDOOR_TENANT_ID: env.GONDOOR_TENANT_ID,
+            GONDOOR_WEBHOOK_SECRET: env.GONDOOR_WEBHOOK_SECRET,
+            GONDOOR_SAAS_APP_API_KEY: env.GONDOOR_SAAS_APP_API_KEY,
+            GONDOOR_SAAS_VERIFICATION_SECRET: env.GONDOOR_SAAS_VERIFICATION_SECRET
+          }' > "$RUNTIME_SECRETS"
+          chmod 600 "$RUNTIME_SECRETS"
+
+      - name: Exchange OIDC and deploy through Gondoor broker
+        env:
+          AUTHORITY_BASE: https://api.gondoor.app/v1/deployment-authority
+          OIDC_AUDIENCE: https://api.gondoor.app/v1/deployment-authority
+          GENERATION: ${{ inputs.generation }}
+          COMMIT_SHA: ${{ github.sha }}
+          NORMALIZED_TAR: ${{ runner.temp }}/wfp-upload-v1.tar
+          RUNTIME_SECRETS: ${{ runner.temp }}/wfp-runtime-secrets.json
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          state_dir="$(mktemp -d)"
+          lease_id=""
+          lease_token=""
+          finalized=false
+
+          cleanup() {
+            exit_code=$?
+            trap - EXIT INT TERM
+            if [[ -n "$lease_id" && -n "$lease_token" && "$finalized" != true ]]; then
+              curl --fail --silent --show-error \
+                --connect-timeout 5 \
+                --max-time 30 \
+                --request DELETE \
+                --header "Authorization: Bearer $lease_token" \
+                "$AUTHORITY_BASE/leases/$lease_id" \
+                >/dev/null || true
+            fi
+            rm -rf "$state_dir"
+            rm -f "$NORMALIZED_TAR" "$NORMALIZED_TAR.sha256" "$NORMALIZED_TAR.bytes" "$RUNTIME_SECRETS"
+            exit "$exit_code"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          audience="$(jq -rn --arg value "$OIDC_AUDIENCE" '$value | @uri')"
+          curl --fail --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" \
+            --output "$state_dir/oidc.json"
+          oidc_token="$(jq -er '.value' "$state_dir/oidc.json")"
+          echo "::add-mask::$oidc_token"
+
+          artifact_sha256="$(cat "$NORMALIZED_TAR.sha256")"
+          artifact_bytes="$(cat "$NORMALIZED_TAR.bytes")"
+          jq -n \
+            --arg generation "$GENERATION" \
+            --arg commitSha "$COMMIT_SHA" \
+            --arg artifactSha256 "$artifact_sha256" \
+            --argjson artifactBytes "$artifact_bytes" \
+            '{
+              generation: $generation,
+              commitSha: $commitSha,
+              artifactSha256: $artifactSha256,
+              artifactBytes: $artifactBytes,
+              format: "wfp-upload-v1"
+            }' > "$state_dir/exchange.json"
+
+          curl --fail --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --request POST \
+            --header "Authorization: Bearer $oidc_token" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$state_dir/exchange.json" \
+            "$AUTHORITY_BASE/exchange" \
+            --output "$state_dir/lease.json"
+          lease_id="$(jq -er '.leaseId' "$state_dir/lease.json")"
+          lease_token="$(jq -er '.leaseToken' "$state_dir/lease.json")"
+          echo "::add-mask::$lease_token"
+
+          curl --fail --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 600 \
+            --request PUT \
+            --header "Authorization: Bearer $lease_token" \
+            --form "artifact=@$NORMALIZED_TAR;type=application/x-tar" \
+            --form "runtimeBindings=@$RUNTIME_SECRETS;type=application/json" \
+            "$AUTHORITY_BASE/leases/$lease_id/deployment" \
+            --output "$state_dir/deployment.json"
+
+          curl --fail --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --request POST \
+            --header "Authorization: Bearer $lease_token" \
+            "$AUTHORITY_BASE/leases/$lease_id/finalize" \
+            --output "$state_dir/finalize.json"
+          jq -e '.state == "finalized"' "$state_dir/finalize.json" >/dev/null
+          finalized=true
