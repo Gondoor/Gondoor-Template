@@ -72,6 +72,63 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Reject incompatible auth source
+        run: |
+          node <<'NODE'
+          const { readdirSync, readFileSync } = require('node:fs');
+          const { extname, join } = require('node:path');
+
+          const ignoredDirectories = new Set([
+            '.git',
+            '.next',
+            '.open-next',
+            'build',
+            'coverage',
+            'dist',
+            'node_modules',
+            'test',
+            'tests',
+            '__tests__',
+          ]);
+          const ignoredFiles = new Set([
+            'bun.lock',
+            'bun.lockb',
+            'npm-shrinkwrap.json',
+            'package-lock.json',
+            'pnpm-lock.yaml',
+            'yarn.lock',
+          ]);
+          const sourceExtensions = new Set([
+            '.cjs',
+            '.cts',
+            '.js',
+            '.jsx',
+            '.mjs',
+            '.mts',
+            '.ts',
+            '.tsx',
+          ]);
+          const incompatibleAuthSource = /(?:next-auth|auth\.js|@auth\/)/iu;
+
+          function visit(directory) {
+            for (const entry of readdirSync(directory, { withFileTypes: true })) {
+              if (entry.isDirectory()) {
+                if (!ignoredDirectories.has(entry.name)) visit(join(directory, entry.name));
+                continue;
+              }
+              const shouldInspect =
+                entry.isFile() &&
+                !ignoredFiles.has(entry.name) &&
+                (entry.name === 'package.json' || sourceExtensions.has(extname(entry.name)));
+              if (shouldInspect && incompatibleAuthSource.test(readFileSync(join(directory, entry.name), 'utf8'))) {
+                process.exit(1);
+              }
+            }
+          }
+
+          visit('.');
+          NODE
+
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
@@ -79,6 +136,11 @@ jobs:
         env:
           BETTER_AUTH_SECRET: placeholder-build-only
           BETTER_AUTH_URL: https://placeholder.workers.dev
+          BETTER_AUTH_TRUSTED_ORIGINS: https://placeholder.workers.dev
+          AUTH_SECRET: placeholder-build-only
+          AUTH_URL: https://placeholder.workers.dev
+          NEXTAUTH_SECRET: placeholder-build-only
+          NEXTAUTH_URL: https://placeholder.workers.dev
         run: pnpm exec opennextjs-cloudflare build
 
       - name: Apply database migrations
@@ -281,6 +343,10 @@ jobs:
             BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
             BETTER_AUTH_URL: env.BETTER_AUTH_URL,
             BETTER_AUTH_TRUSTED_ORIGINS: env.BETTER_AUTH_TRUSTED_ORIGINS,
+            AUTH_SECRET: env.BETTER_AUTH_SECRET,
+            AUTH_URL: env.BETTER_AUTH_URL,
+            NEXTAUTH_SECRET: env.BETTER_AUTH_SECRET,
+            NEXTAUTH_URL: env.BETTER_AUTH_URL,
             NEXT_PUBLIC_APP_URL: env.NEXT_PUBLIC_APP_URL,
             GONDOOR_API_BASE: env.GONDOOR_API_BASE,
             GONDOOR_API_KEY: env.GONDOOR_API_KEY,
