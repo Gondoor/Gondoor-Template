@@ -18,10 +18,171 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
+      - name: Reject incompatible auth source
+        run: |
+          node <<'NODE'
+          const { readdirSync, readFileSync } = require('node:fs');
+          const { extname, join } = require('node:path');
+          const ts = require('typescript');
+
+          const ignoredDirectories = new Set([
+            '.git',
+            '.next',
+            '.open-next',
+            'build',
+            'coverage',
+            'dist',
+            'node_modules',
+            'test',
+            'tests',
+            '__tests__',
+          ]);
+          const sourceExtensions = new Set([
+            '.cjs',
+            '.cts',
+            '.js',
+            '.jsx',
+            '.mjs',
+            '.mts',
+            '.ts',
+            '.tsx',
+          ]);
+          const dependencyFields = [
+            'dependencies',
+            'devDependencies',
+            'optionalDependencies',
+            'peerDependencies',
+          ];
+
+          function isIncompatibleModule(name) {
+            const normalized = name.toLowerCase();
+            return (
+              normalized === 'next-auth' ||
+              normalized.startsWith('next-auth/') ||
+              normalized === 'auth.js' ||
+              normalized.startsWith('auth.js/') ||
+              normalized.startsWith('@auth/')
+            );
+          }
+
+          function npmAliasTarget(specifier) {
+            if (typeof specifier !== 'string' || !specifier.startsWith('npm:')) return undefined;
+            const target = specifier.slice(4);
+            const versionSeparator = target.startsWith('@')
+              ? target.indexOf('@', 1)
+              : target.indexOf('@');
+            return versionSeparator === -1 ? target : target.slice(0, versionSeparator);
+          }
+
+          function hasIncompatibleDependency(filePath) {
+            let manifest;
+            try {
+              manifest = JSON.parse(readFileSync(filePath, 'utf8'));
+            } catch {
+              return true;
+            }
+            if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return true;
+            return dependencyFields.some((field) => {
+              const dependencies = manifest[field];
+              return (
+                dependencies &&
+                typeof dependencies === 'object' &&
+                !Array.isArray(dependencies) &&
+                Object.entries(dependencies).some(([name, specifier]) => {
+                  const aliasTarget = npmAliasTarget(specifier);
+                  return (
+                    isIncompatibleModule(name) ||
+                    Boolean(aliasTarget && isIncompatibleModule(aliasTarget))
+                  );
+                })
+              );
+            });
+          }
+
+          function moduleSpecifier(node) {
+            if (
+              (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+              node.moduleSpecifier &&
+              ts.isStringLiteralLike(node.moduleSpecifier)
+            ) {
+              return node.moduleSpecifier.text;
+            }
+            if (
+              ts.isImportEqualsDeclaration(node) &&
+              ts.isExternalModuleReference(node.moduleReference) &&
+              node.moduleReference.expression &&
+              ts.isStringLiteralLike(node.moduleReference.expression)
+            ) {
+              return node.moduleReference.expression.text;
+            }
+            if (!ts.isCallExpression(node) || node.arguments.length !== 1) return undefined;
+            const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+            const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+            const argument = node.arguments[0];
+            return (isDynamicImport || isRequire) && argument && ts.isStringLiteralLike(argument)
+              ? argument.text
+              : undefined;
+          }
+
+          function hasIncompatibleModuleSpecifier(filePath) {
+            const extension = extname(filePath);
+            const scriptKind =
+              extension === '.jsx'
+                ? ts.ScriptKind.JSX
+                : extension === '.tsx'
+                  ? ts.ScriptKind.TSX
+                  : ['.ts', '.cts', '.mts'].includes(extension)
+                    ? ts.ScriptKind.TS
+                    : ts.ScriptKind.JS;
+            const source = ts.createSourceFile(
+              filePath,
+              readFileSync(filePath, 'utf8'),
+              ts.ScriptTarget.Latest,
+              true,
+              scriptKind,
+            );
+            if (source.parseDiagnostics.length > 0) return true;
+            let incompatible = false;
+            function inspect(node) {
+              if (incompatible) return;
+              const specifier = moduleSpecifier(node);
+              if (specifier && isIncompatibleModule(specifier)) {
+                incompatible = true;
+                return;
+              }
+              ts.forEachChild(node, inspect);
+            }
+            inspect(source);
+            return incompatible;
+          }
+
+          function visit(directory) {
+            for (const entry of readdirSync(directory, { withFileTypes: true })) {
+              if (entry.isDirectory()) {
+                if (!ignoredDirectories.has(entry.name)) visit(join(directory, entry.name));
+                continue;
+              }
+              if (!entry.isFile()) continue;
+              const filePath = join(directory, entry.name);
+              if (entry.name === 'package.json' && hasIncompatibleDependency(filePath)) process.exit(1);
+              if (
+                sourceExtensions.has(extname(entry.name)) &&
+                hasIncompatibleModuleSpecifier(filePath)
+              ) process.exit(1);
+            }
+          }
+
+          visit('.');
+          NODE
       - run: npx @opennextjs/cloudflare build
         env:
           BETTER_AUTH_SECRET: placeholder-build-only
           BETTER_AUTH_URL: https://placeholder.workers.dev
+          BETTER_AUTH_TRUSTED_ORIGINS: https://placeholder.workers.dev
+          AUTH_SECRET: placeholder-build-only
+          AUTH_URL: https://placeholder.workers.dev
+          NEXTAUTH_SECRET: placeholder-build-only
+          NEXTAUTH_URL: https://placeholder.workers.dev
       - name: Check deploy prerequisites
         id: deploy_prereqs
         run: |
@@ -57,9 +218,25 @@ jobs:
       - name: Set worker secrets
         if: steps.deploy_prereqs.outputs.can_deploy == 'true'
         run: |
-          printf '{"DATABASE_URL":"%s","COMPANY_ID":"%s","NODE_ENV":"%s","BETTER_AUTH_SECRET":"%s","BETTER_AUTH_URL":"%s","BETTER_AUTH_TRUSTED_ORIGINS":"%s","NEXT_PUBLIC_APP_URL":"%s","GONDOOR_API_BASE":"%s","GONDOOR_API_KEY":"%s","GONDOOR_TENANT_ID":"%s","GONDOOR_WEBHOOK_SECRET":"%s","GONDOOR_SAAS_APP_API_KEY":"%s","GONDOOR_SAAS_VERIFICATION_SECRET":"%s"}' \
-            "$DATABASE_URL" "$COMPANY_ID" "$NODE_ENV" "$BETTER_AUTH_SECRET" "$BETTER_AUTH_URL" "$BETTER_AUTH_TRUSTED_ORIGINS" "$NEXT_PUBLIC_APP_URL" "$GONDOOR_API_BASE" "$GONDOOR_API_KEY" "$GONDOOR_TENANT_ID" "$GONDOOR_WEBHOOK_SECRET" "$GONDOOR_SAAS_APP_API_KEY" "$GONDOOR_SAAS_VERIFICATION_SECRET" \
-            | pnpm dlx wrangler@4.83.0 secret bulk --name "$WORKER_NAME"
+          jq -n '{
+            DATABASE_URL: env.DATABASE_URL,
+            COMPANY_ID: env.COMPANY_ID,
+            NODE_ENV: env.NODE_ENV,
+            BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+            BETTER_AUTH_URL: env.BETTER_AUTH_URL,
+            BETTER_AUTH_TRUSTED_ORIGINS: env.BETTER_AUTH_TRUSTED_ORIGINS,
+            AUTH_SECRET: env.BETTER_AUTH_SECRET,
+            AUTH_URL: env.BETTER_AUTH_URL,
+            NEXTAUTH_SECRET: env.BETTER_AUTH_SECRET,
+            NEXTAUTH_URL: env.BETTER_AUTH_URL,
+            NEXT_PUBLIC_APP_URL: env.NEXT_PUBLIC_APP_URL,
+            GONDOOR_API_BASE: env.GONDOOR_API_BASE,
+            GONDOOR_API_KEY: env.GONDOOR_API_KEY,
+            GONDOOR_TENANT_ID: env.GONDOOR_TENANT_ID,
+            GONDOOR_WEBHOOK_SECRET: env.GONDOOR_WEBHOOK_SECRET,
+            GONDOOR_SAAS_APP_API_KEY: env.GONDOOR_SAAS_APP_API_KEY,
+            GONDOOR_SAAS_VERIFICATION_SECRET: env.GONDOOR_SAAS_VERIFICATION_SECRET
+          }' | pnpm dlx wrangler@4.83.0 secret bulk --name "$WORKER_NAME"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           COMPANY_ID: ${{ secrets.COMPANY_ID }}
