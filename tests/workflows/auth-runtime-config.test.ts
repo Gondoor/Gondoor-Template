@@ -138,6 +138,7 @@ function runGuard(guard: string, fixture: (directory: string) => void) {
     return spawnSync(process.execPath, ["-"], {
       cwd: directory,
       encoding: "utf8",
+      env: { ...process.env, NODE_PATH: path.join(projectRoot, "node_modules") },
       input: guard,
     });
   } finally {
@@ -271,6 +272,22 @@ describe("deployment auth runtime configuration", () => {
   );
 
   it.each(workflows)(
+    "$name rejects JSON-escaped incompatible dependency names quietly",
+    ({ path: workflowPath }) => {
+      const guard = extractAuthGuard(workflowContents(workflowPath));
+      for (const manifest of [
+        '{"dependencies":{"next\\u002dauth":"5.0.0"}}',
+        '{"dependencies":{"auth-wrapper":"npm:@auth\\u002fcore@1.0.0"}}',
+      ]) {
+        const result = runGuard(guard, (directory) => {
+          writeFixture(directory, "package.json", manifest);
+        });
+        expectQuietFailure(result);
+      }
+    }
+  );
+
+  it.each(workflows)(
     "$name rejects incompatible JavaScript and TypeScript imports quietly",
     ({ path: workflowPath }) => {
       const guard = extractAuthGuard(workflowContents(workflowPath));
@@ -284,6 +301,63 @@ describe("deployment auth runtime configuration", () => {
         );
         expectQuietFailure(result);
       }
+    }
+  );
+
+  it.each(workflows)(
+    "$name rejects escaped incompatible module specifiers quietly",
+    ({ path: workflowPath }) => {
+      const guard = extractAuthGuard(workflowContents(workflowPath));
+
+      for (const [fixturePath, source] of [
+        ["app/static-import.ts", 'import NextAuth from "next\\u002dauth";'],
+        ["app/re-export.ts", 'export { Auth } from "@auth\\u002fcore";'],
+        ["app/dynamic-import.ts", 'void import("next\\x2dauth");'],
+        ["app/require.cjs", 'require("@auth\\u002fcore");'],
+      ]) {
+        const result = runGuard(guard, (directory) =>
+          writeFixture(directory, fixturePath, source)
+        );
+        expectQuietFailure(result);
+      }
+    }
+  );
+
+  it.each(workflows)(
+    "$name permits provider names in comments and ordinary content strings",
+    ({ path: workflowPath }) => {
+      const guard = extractAuthGuard(workflowContents(workflowPath));
+      const result = runGuard(guard, (directory) => {
+        writeFixture(directory, "package.json", JSON.stringify({ dependencies: {} }));
+        writeFixture(
+          directory,
+          "app/content.ts",
+          '// import NextAuth from "next-auth";\nexport const migrationNote = "next-auth and @auth/core are unsupported";'
+        );
+      });
+
+      expectQuietSuccess(result);
+    }
+  );
+
+  it.each(workflows)(
+    "$name accepts Better Auth dependencies and module specifiers",
+    ({ path: workflowPath }) => {
+      const guard = extractAuthGuard(workflowContents(workflowPath));
+      const result = runGuard(guard, (directory) => {
+        writeFixture(
+          directory,
+          "package.json",
+          JSON.stringify({ dependencies: { "better-auth": "1.5.5" } })
+        );
+        writeFixture(
+          directory,
+          "app/auth.ts",
+          'import { betterAuth } from "better-auth";\nexport const auth = betterAuth({});'
+        );
+      });
+
+      expectQuietSuccess(result);
     }
   );
 
