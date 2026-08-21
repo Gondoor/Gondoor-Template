@@ -8,12 +8,14 @@ const workflows = [
   {
     name: "reusable WfP deployment",
     path: path.join(projectRoot, ".github/workflows/deploy-wfp.yml"),
-    buildCommand: "opennextjs-cloudflare build",
+    installCommand: "pnpm install --frozen-lockfile",
+    buildCommand: "pnpm exec opennextjs-cloudflare build",
   },
   {
     name: "legacy deployment",
     path: path.join(projectRoot, ".github/workflows/deploy.yml"),
-    buildCommand: "@opennextjs/cloudflare build",
+    installCommand: "pnpm install",
+    buildCommand: "npx @opennextjs/cloudflare build",
   },
 ];
 
@@ -82,6 +84,46 @@ function extractBuildStep(workflow: string, buildCommand: string) {
   return workflow.slice(start === -1 ? 0 : start, end === -1 ? undefined : end);
 }
 
+function workflowStepBlocks(workflow: string) {
+  const starts = Array.from(workflow.matchAll(/^      - /gm), (match) => match.index);
+  return starts.map((start, index) => workflow.slice(start, starts[index + 1]));
+}
+
+function stepWithRunCommand(steps: string[], command: string) {
+  return steps.findIndex((step) =>
+    step
+      .split("\n")
+      .some((line) => line.trim().replace(/^-\s+/u, "") === `run: ${command}`)
+  );
+}
+
+function assertImmutableAuthGuardSequence(
+  workflow: string,
+  installCommand: string,
+  buildCommand: string
+) {
+  const steps = workflowStepBlocks(workflow);
+  const guards = steps
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => step.includes("- name: Reject incompatible auth source"));
+  const install = stepWithRunCommand(steps, installCommand);
+  const build = stepWithRunCommand(steps, buildCommand);
+
+  expect(guards).toHaveLength(1);
+  expect(install).toBeGreaterThan(-1);
+  expect(build).toBeGreaterThan(-1);
+  expect(guards[0]?.index).toBe(install + 1);
+  expect(build).toBe(install + 2);
+  expect(guards[0]?.step).not.toMatch(/^\s+(?:if|continue-on-error):/m);
+}
+
+function rewriteWorkflowSteps(workflow: string, rewrite: (steps: string[]) => string[]) {
+  const starts = Array.from(workflow.matchAll(/^      - /gm), (match) => match.index);
+  expect(starts.length).toBeGreaterThan(0);
+  const first = starts[0] ?? 0;
+  return workflow.slice(0, first) + rewrite(workflowStepBlocks(workflow)).join("");
+}
+
 function extractAuthGuard(workflow: string) {
   const script = extractRunScript(workflow, "Reject incompatible auth source");
   const heredoc = script.match(/node <<'NODE'\n([\s\S]*?)\nNODE\s*$/);
@@ -143,18 +185,72 @@ describe("deployment auth runtime configuration", () => {
   );
 
   it.each(workflows)(
-    "$name executes its guard before install and build",
-    ({ path: workflowPath, buildCommand }) => {
+    "$name installs dependencies then runs its mandatory guard immediately before build",
+    ({ path: workflowPath, installCommand, buildCommand }) => {
       const workflow = workflowContents(workflowPath);
-      const guard = workflow.indexOf("- name: Reject incompatible auth source");
-      const install = workflow.indexOf("pnpm install");
-      const build = workflow.indexOf(buildCommand);
-
-      expect(guard).toBeGreaterThan(-1);
-      expect(guard).toBeLessThan(install);
-      expect(guard).toBeLessThan(build);
+      assertImmutableAuthGuardSequence(workflow, installCommand, buildCommand);
     }
   );
+
+  it.each(workflows)(
+    "$name rejects a guard positioned before dependency installation",
+    ({ path: workflowPath, installCommand, buildCommand }) => {
+      const workflow = workflowContents(workflowPath);
+      const reordered = rewriteWorkflowSteps(workflow, (steps) => {
+        const install = stepWithRunCommand(steps, installCommand);
+        const guard = steps.findIndex((step) =>
+          step.includes("- name: Reject incompatible auth source")
+        );
+        [steps[install], steps[guard]] = [steps[guard] ?? "", steps[install] ?? ""];
+        return steps;
+      });
+
+      expect(() =>
+        assertImmutableAuthGuardSequence(reordered, installCommand, buildCommand)
+      ).toThrow();
+    }
+  );
+
+  it.each(workflows)(
+    "$name rejects an intervening source rewrite between guard and build",
+    ({ path: workflowPath, installCommand, buildCommand }) => {
+      const workflow = workflowContents(workflowPath);
+      const rewritten = rewriteWorkflowSteps(workflow, (steps) => {
+        const build = stepWithRunCommand(steps, buildCommand);
+        steps.splice(
+          build,
+          0,
+          "      - name: Rewrite generated auth source\n        run: node scripts/rewrite-auth.mjs\n\n"
+        );
+        return steps;
+      });
+
+      expect(() =>
+        assertImmutableAuthGuardSequence(rewritten, installCommand, buildCommand)
+      ).toThrow();
+    }
+  );
+
+  it.each([
+    ["disabled", "        if: false\n"],
+    ["allowed to continue on error", "        continue-on-error: true\n"],
+  ])("rejects a %s incompatible-auth guard", (_name, executionControl) => {
+    for (const workflowConfig of workflows) {
+      const workflow = workflowContents(workflowConfig.path);
+      const weakened = workflow.replace(
+        "      - name: Reject incompatible auth source\n",
+        `      - name: Reject incompatible auth source\n${executionControl}`
+      );
+
+      expect(() =>
+        assertImmutableAuthGuardSequence(
+          weakened,
+          workflowConfig.installCommand,
+          workflowConfig.buildCommand
+        )
+      ).toThrow();
+    }
+  });
 
   it.each(workflows)(
     "$name rejects incompatible package dependencies quietly",

@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - run: pnpm install
       - name: Reject incompatible auth source
         run: |
           node <<'NODE'
@@ -73,7 +74,6 @@ jobs:
 
           visit('.');
           NODE
-      - run: pnpm install
       - run: npx @opennextjs/cloudflare build
         env:
           BETTER_AUTH_SECRET: placeholder-build-only

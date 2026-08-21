@@ -72,6 +72,9 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Reject incompatible auth source
         run: |
           node <<'NODE'
@@ -128,9 +131,6 @@ jobs:
 
           visit('.');
           NODE
-
-      - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Build OpenNext artifact
         env:
