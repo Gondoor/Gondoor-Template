@@ -152,10 +152,15 @@ function writeFixture(directory: string, relativePath: string, contents: string)
   fs.writeFileSync(fixturePath, contents);
 }
 
-function expectQuietFailure(result: ReturnType<typeof spawnSync>) {
-  expect(result.status).toBe(1);
-  expect(result.stdout).toBe("");
+// The guard is WARN-ONLY: a detected violation must annotate the run and still
+// exit 0 so the finished artifact deploys. See the "Reject incompatible auth
+// source" steps in both workflows.
+function expectWarningWithoutFailure(result: ReturnType<typeof spawnSync>) {
+  expect(result.status).toBe(0);
   expect(result.stderr).toBe("");
+  expect(result.stdout).toMatch(
+    /^::warning::incompatible auth source detected: .+$/m
+  );
 }
 
 function expectQuietSuccess(result: ReturnType<typeof spawnSync>) {
@@ -254,7 +259,20 @@ describe("deployment auth runtime configuration", () => {
   });
 
   it.each(workflows)(
-    "$name rejects incompatible package dependencies quietly",
+    "$name keeps its incompatible-auth guard warn-only with no failing exit path",
+    ({ path: workflowPath }) => {
+      const guard = extractAuthGuard(workflowContents(workflowPath));
+
+      expect(guard).toContain("::warning::incompatible auth source detected:");
+      expect(guard).toContain("process.exit(0)");
+      expect(guard).not.toMatch(/process\.exit\(\s*[1-9]/);
+      expect(guard).not.toMatch(/exitCode\s*=\s*[1-9]/);
+      expect(guard).not.toMatch(/throw\s/);
+    }
+  );
+
+  it.each(workflows)(
+    "$name warns about incompatible package dependencies without failing the deploy",
     ({ path: workflowPath }) => {
       const guard = extractAuthGuard(workflowContents(workflowPath));
 
@@ -266,13 +284,13 @@ describe("deployment auth runtime configuration", () => {
             JSON.stringify({ dependencies: { [dependency]: "1.0.0" } })
           );
         });
-        expectQuietFailure(result);
+        expectWarningWithoutFailure(result);
       }
     }
   );
 
   it.each(workflows)(
-    "$name rejects JSON-escaped incompatible dependency names quietly",
+    "$name warns about JSON-escaped incompatible dependency names without failing the deploy",
     ({ path: workflowPath }) => {
       const guard = extractAuthGuard(workflowContents(workflowPath));
       for (const manifest of [
@@ -282,13 +300,13 @@ describe("deployment auth runtime configuration", () => {
         const result = runGuard(guard, (directory) => {
           writeFixture(directory, "package.json", manifest);
         });
-        expectQuietFailure(result);
+        expectWarningWithoutFailure(result);
       }
     }
   );
 
   it.each(workflows)(
-    "$name rejects incompatible JavaScript and TypeScript imports quietly",
+    "$name warns about incompatible JavaScript and TypeScript imports without failing the deploy",
     ({ path: workflowPath }) => {
       const guard = extractAuthGuard(workflowContents(workflowPath));
 
@@ -299,13 +317,13 @@ describe("deployment auth runtime configuration", () => {
         const result = runGuard(guard, (directory) =>
           writeFixture(directory, fixturePath, source)
         );
-        expectQuietFailure(result);
+        expectWarningWithoutFailure(result);
       }
     }
   );
 
   it.each(workflows)(
-    "$name rejects escaped incompatible module specifiers quietly",
+    "$name warns about escaped incompatible module specifiers without failing the deploy",
     ({ path: workflowPath }) => {
       const guard = extractAuthGuard(workflowContents(workflowPath));
 
@@ -318,7 +336,7 @@ describe("deployment auth runtime configuration", () => {
         const result = runGuard(guard, (directory) =>
           writeFixture(directory, fixturePath, source)
         );
-        expectQuietFailure(result);
+        expectWarningWithoutFailure(result);
       }
     }
   );
