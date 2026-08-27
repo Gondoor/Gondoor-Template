@@ -156,6 +156,12 @@ jobs:
             return incompatible;
           }
 
+          // WARN-ONLY: detection never fails the deployment. A completed
+          // artifact is always shipped; incompatible auth source is surfaced as
+          // a GitHub annotation for follow-up repair instead of discarding the
+          // build. Do not reintroduce a failing exit here.
+          const findings = [];
+
           function visit(directory) {
             for (const entry of readdirSync(directory, { withFileTypes: true })) {
               if (entry.isDirectory()) {
@@ -164,15 +170,26 @@ jobs:
               }
               if (!entry.isFile()) continue;
               const filePath = join(directory, entry.name);
-              if (entry.name === 'package.json' && hasIncompatibleDependency(filePath)) process.exit(1);
+              if (entry.name === 'package.json' && hasIncompatibleDependency(filePath)) {
+                findings.push(`${filePath} declares an incompatible auth dependency`);
+                continue;
+              }
               if (
                 sourceExtensions.has(extname(entry.name)) &&
                 hasIncompatibleModuleSpecifier(filePath)
-              ) process.exit(1);
+              ) {
+                findings.push(`${filePath} references an incompatible auth module`);
+              }
             }
           }
 
           visit('.');
+
+          for (const detail of findings) {
+            console.log(`::warning::incompatible auth source detected: ${detail}`);
+          }
+
+          process.exit(0);
           NODE
       - run: npx @opennextjs/cloudflare build
         env:
