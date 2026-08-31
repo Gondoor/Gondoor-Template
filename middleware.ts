@@ -5,19 +5,26 @@ import { NextRequest, NextResponse } from 'next/server';
 const intlMiddleware = createMiddleware(routing);
 
 export default function middleware(request: NextRequest) {
-  const whop = request.nextUrl.searchParams.get('whop');
-  if (whop === 'test_mode') {
+  const testMode = request.nextUrl.searchParams.get('gondoor_test');
+  if (testMode === 'true' || testMode === 'false') {
     const cleanUrl = request.nextUrl.clone();
-    cleanUrl.searchParams.delete('whop');
+    cleanUrl.searchParams.delete('gondoor_test');
     const response = NextResponse.redirect(cleanUrl, 307);
-    response.cookies.set('gondoor-mode', 'test', {
-      httpOnly: true,
-      sameSite: 'lax',
-      maxAge: 14400,
-      path: '/',
-    });
+
+    if (testMode === 'true') {
+      response.cookies.set('gondoor_test', 'true', {
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 14400,
+        path: '/',
+      });
+    } else {
+      response.cookies.delete('gondoor_test');
+    }
+
     return response;
   }
+
   return intlMiddleware(request);
 }
 
