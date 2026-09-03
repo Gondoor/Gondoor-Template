@@ -17,6 +17,10 @@ This template deploys to Cloudflare Pages via `@opennextjs/cloudflare`. Unlike t
 - Preserve upstream checkout validation/product 4xx responses as JSON 400/422. The verifier posts all-zero UUID `tenantProductId` to `POST /api/checkout`; invalid product responses must not be collapsed into 502. Network failures and upstream 5xx may return 502.
 - Never use `cart.lines` for Gondoor tenant checkout.
 - Never expose `GONDOOR_API_KEY`, `GONDOOR_WEBHOOK_SECRET`, `gdr_`, or `whsec_` in client code or `NEXT_PUBLIC_*` variables. Do not create `NEXT_PUBLIC_GONDOOR_API_KEY`.
+- `?gondoor_test=true` sets the HttpOnly `gondoor_test=true` cookie and redirects without that query. `?gondoor_test=false` clears the cookie and redirects cleanly.
+- Test mode is public, cookie-based behavior—not access control. Never add a test-mode secret, token, signature, header, or body override.
+- Commerce uses only `GONDOOR_API_BASE`, `GONDOOR_API_KEY`, `GONDOOR_TENANT_ID`, and `GONDOOR_WEBHOOK_SECRET`. `GONDOOR_WEBHOOK_SECRET` is only for signed order delivery.
+- Do not add test-mode secrets to deployment workflows.
 - Why: route tests lock this contract, and implementation intent is to keep tenant product IDs in public form/catalog data while secrets and tenant credentials stay server-only.
 
 ## Diagnostic Error Boundaries: DO NOT REMOVE
